@@ -294,18 +294,6 @@ Stop the skipping at LIMIT (a buffer position or a marker)."
             (setq done t)))))
     (when new-start-of-line (goto-char new-start-of-line))))
 
-;; (defsubst latex-table-wizard--contentless-string-p (beg end)
-;;   (let ((str (buffer-substring-no-properties beg end))
-;;         (hline-macros (concat "[^\\\\]\\\\"
-;;                               (regexp-opt
-;;                                latex-table-wizard--current-hline-macros)
-;;                               latex-table-wizard--macro-args-re)))
-;;     (thread-last
-;;       str
-;;       (replace-regexp-in-string "[^\\\\]%.*$" "")
-;;       (replace-regexp-in-string hline-macros "")
-;;       (string-blank-p))))
-
 (defun latex-table-wizard--parse-table ()
   "Parse table(-like) environment point is in.
 
@@ -336,7 +324,6 @@ Each value is an integer, S and E are markers."
     (save-excursion
       (goto-char env-beg)
       (while (< (point) env-end)
-        ;; (latex-table-wizard--skip-stuff env-end)
         (when (looking-at-p "[[:space:]]*\\($\\|%\\)")
           ;; nothing interesting left between point and eol
           (forward-line))
