@@ -200,23 +200,80 @@ delimiters embedded in a cell.
 
 * Customization
 ** Change keybindings
-To change the default keybindings you give an appropriate value to the
-association list ~latex-table-wizard-bindings-alist~ and then call the
-function ~latex-table-wizard-modify-bindings~.
+To change the default keybindings, you need to provide a new
+definition of the transient prefix ~latex-table-wizard-do~ through the
+macro ~transient-define-prefix~.
 
-Suppose you want to keep all the defaults except that you want to bind
-~l~ to ~latex-table-wizard-right~ and ~s l~ to
-~latex-table-wizard-swap-cell-right~.  To achieve that add this to
-your configuration of ~latex-table-wizard~:
+The default definition, which is the one assumed in this readme so
+far, is below:
 
 #+begin_src emacs-lisp
-(setq latex-table-wizard-bindings-alist
-      '((latex-table-wizard-right . "l")
-        (latex-table-wizard-swap-cell-right . "s l")))
+(transient-define-prefix latex-table-wizard-do ()
+  [:description
+   "      LaTeX table wizard"
+   ["Motion"
+    ;; latex-table-wizard--motion-suffixes
+    ("f" "move right" latex-table-wizard-right :transient t)
+    ("b" "move left" latex-table-wizard-left :transient t)
+    ("p" "move down" latex-table-wizard-up :transient t)
+    ("n" "move up" latex-table-wizard-down :transient t)
+    ""
+    ("F" "end of row" latex-table-wizard-end-of-row :transient t)
+    ("B" "beginning of row" latex-table-wizard-beginning-of-row :transient t)
+    ("P" "top" latex-table-wizard-top :transient t)
+    ("N" "bottom" latex-table-wizard-bottom :transient t)
+    ""
+    ("a" "beginning of cell" latex-table-wizard-beginning-of-cell :transient t)
+    ("e" "end of cell" latex-table-wizard-end-of-cell :transient t)
+    ""
+    ("u" "universal argument" universal-argument :transient t)]
+   ["Swap"
+    ;; latex-table-wizard--swap-cell-suffixes
+    ("C-f" "swap cell right" latex-table-wizard-swap-cell-right :transient t)
+    ("C-b" "swap cell left" latex-table-wizard-swap-cell-left :transient t)
+    ("C-p" "swap cell up" latex-table-wizard-swap-cell-up :transient t)
+    ("C-n" "swap cell down" latex-table-wizard-swap-cell-down :transient t)
+    ""
+    ;; latex-table-wizard--swap-line-suffixes
+    ("M-f" "swap column right" latex-table-wizard-swap-column-right :transient t)
+    ("M-b" "swap column left" latex-table-wizard-swap-column-left :transient t)
+    ("M-p" "swap row up" latex-table-wizard-swap-row-up :transient t)
+    ("M-n" "swap row down" latex-table-wizard-swap-row-down :transient t)
+    ""
+    "Other"
+    ;; latex-table-wizard--other-suffixes
+    ("w" "compress table" latex-table-wizard-clean-whitespace :transient t)
+    ("TAB" "align table" latex-table-wizard-align :transient t)
+    ("/" "undo" undo :transient t)
+    ""
+    ("RET" "done" transient-quit-one)]
+   ["Select and swap"
+    ("SPC" "select cell" latex-table-wizard-select-cell :transient t)
+    ("c" "select column" latex-table-wizard-select-column :transient t)
+    ("r" "select row" latex-table-wizard-select-row :transient t)
+    ("d SPC" "deselect cell" latex-table-wizard-deselect-cell :transient t)
+    ("d c" "select column" latex-table-wizard-deselect-column :transient t)
+    ("d r" "select row" latex-table-wizard-deselect-row :transient t)
+    ""
+    ("s" "swap selection" latex-table-wizard-swap :transient t)
+    ""
+    "Mark, kill and insert"
+    ;; latex-table-wizard--mark-suffixes
+    ("x" "exchange point and mark" exchange-point-and-mark :transient t)
+    ("m c" "mark cell" latex-table-wizard-mark-cell :transient t)
+    ("i c" "insert column right" latex-table-wizard-insert-column :transient t)
+    ("i r" "insert row below" latex-table-wizard-insert-row :transient t)
+    ("k c" "kill current column" latex-table-wizard-kill-column :transient t)
+    ("k r" "kill current row" latex-table-wizard-kill-row :transient t)]])
 #+end_src
 
-The syntax of the values (the keys) is the same accepted by the built
-in ~kbd~ macro.
+Just put a copy of this macro calling with the appropriate
+modifications in your configuration file.  The first element of each
+list in the vectors is the key (given in the same syntax as the ~kbd~
+macro accepts).  You can also move around or remove some of these
+cells if you want to change the layout of the transient interface.
+
+
 ** Define rules for new environments
 :PROPERTIES:
 :CUSTOM_ID: user-defined-envs

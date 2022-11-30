@@ -55,6 +55,7 @@
 
 ;;; Dependencies
 
+(require 'latex)
 (require 'cl-lib)
 (require 'rx)
 (require 'regexp-opt)
@@ -62,10 +63,6 @@
 (require 'transient)
 
 ;;; Regular expressions
-
-;; (defconst latex-table-wizard--macro-prefix-re
-;;   (rx (seq (zero-or-one (or (not 92) (seq 92 92))) "\\"))
-;;   "Regexp matching unescaped \"\\\".")
 
 (defconst latex-table-wizard--macro-args-re
   (rx (seq (zero-or-more                    ; obligatory arguments
@@ -78,7 +75,6 @@
 
 (defconst latex-table-wizard--macro-re
   (concat "\\\\"
-          ;; latex-table-wizard--macro-prefix-re
           (rx (group-n 1 (one-or-more alnum)))
           latex-table-wizard--macro-args-re)
   "Regexp matching unescaped LaTeX macros.
@@ -1086,8 +1082,13 @@ at point.  If it is none of those object, return nil."
 
 ;;; Transient
 
-(defvar latex-table-wizard--motion-suffixes
-  '(("f" "move right" latex-table-wizard-right :transient t)
+;;;###autoload (autoload 'latex-table-wizard-do "latex-table-wizard" nil t)
+(transient-define-prefix latex-table-wizard-do ()
+  [:description
+   "      LaTeX table wizard"
+   ["Motion"
+    ;; latex-table-wizard--motion-suffixes
+    ("f" "move right" latex-table-wizard-right :transient t)
     ("b" "move left" latex-table-wizard-left :transient t)
     ("p" "move down" latex-table-wizard-up :transient t)
     ("n" "move up" latex-table-wizard-down :transient t)
@@ -1100,133 +1101,45 @@ at point.  If it is none of those object, return nil."
     ("a" "beginning of cell" latex-table-wizard-beginning-of-cell :transient t)
     ("e" "end of cell" latex-table-wizard-end-of-cell :transient t)
     ""
-    ("u" "universal argument" universal-argument :transient t)))
-
-(defvar latex-table-wizard--mark-suffixes
-  '(("x" "exchange point and mark" exchange-point-and-mark :transient t)
-    ("m c" "mark cell" latex-table-wizard-mark-cell :transient t)
-    ("i c" "insert column right" latex-table-wizard-insert-column :transient t)
-    ("i r" "insert row below" latex-table-wizard-insert-row :transient t)
-    ("k c" "kill current column" latex-table-wizard-kill-column :transient t)
-    ("k r" "kill current row" latex-table-wizard-kill-row :transient t)))
-
-(defvar latex-table-wizard--swap-cell-suffixes
-  '(("C-f" "swap cell right" latex-table-wizard-swap-cell-right :transient t)
+    ("u" "universal argument" universal-argument :transient t)]
+   ["Swap"
+    ;; latex-table-wizard--swap-cell-suffixes
+    ("C-f" "swap cell right" latex-table-wizard-swap-cell-right :transient t)
     ("C-b" "swap cell left" latex-table-wizard-swap-cell-left :transient t)
     ("C-p" "swap cell up" latex-table-wizard-swap-cell-up :transient t)
-    ("C-n" "swap cell down" latex-table-wizard-swap-cell-down :transient t)))
-
-(defvar latex-table-wizard--swap-line-suffixes
-  '(("M-f" "swap column right" latex-table-wizard-swap-column-right :transient t)
+    ("C-n" "swap cell down" latex-table-wizard-swap-cell-down :transient t)
+    ""
+    ;; latex-table-wizard--swap-line-suffixes
+    ("M-f" "swap column right" latex-table-wizard-swap-column-right :transient t)
     ("M-b" "swap column left" latex-table-wizard-swap-column-left :transient t)
     ("M-p" "swap row up" latex-table-wizard-swap-row-up :transient t)
-    ("M-n" "swap row down" latex-table-wizard-swap-row-down :transient t)))
-
-(defvar latex-table-wizard--select-suffixes
-  '(("SPC" "select cell" latex-table-wizard-select-cell :transient t)
+    ("M-n" "swap row down" latex-table-wizard-swap-row-down :transient t)
+    ""
+    "Other"
+    ;; latex-table-wizard--other-suffixes
+    ("w" "compress table" latex-table-wizard-clean-whitespace :transient t)
+    ("TAB" "align table" latex-table-wizard-align :transient t)
+    ("/" "undo" undo :transient t)
+    ""
+    ("RET" "done" transient-quit-one)]
+   ["Select and swap"
+    ("SPC" "select cell" latex-table-wizard-select-cell :transient t)
     ("c" "select column" latex-table-wizard-select-column :transient t)
     ("r" "select row" latex-table-wizard-select-row :transient t)
     ("d SPC" "deselect cell" latex-table-wizard-deselect-cell :transient t)
     ("d c" "select column" latex-table-wizard-deselect-column :transient t)
     ("d r" "select row" latex-table-wizard-deselect-row :transient t)
     ""
-    ("s" "swap selection" latex-table-wizard-swap :transient t)))
-
-(defvar latex-table-wizard--other-suffixes
-  '(("w" "compress table" latex-table-wizard-clean-whitespace :transient t)
-    ("TAB" "align table" latex-table-wizard-align :transient t)
-    ("/" "undo" undo :transient t)
+    ("s" "swap selection" latex-table-wizard-swap :transient t)
     ""
-    ("RET" "done" transient-quit-one)))
-
-;;;###autoload
-(transient-define-prefix latex-table-wizard-do ()
-  [:description "      LaTeX table wizard"
-                ["Motion" latex-table-wizard--motion-suffixes]
-                ["Swap"
-                 latex-table-wizard--swap-cell-suffixes
-                 ""
-                 latex-table-wizard--swap-line-suffixes
-                 ""
-                 "Other"
-                 latex-table-wizard--other-suffixes]
-                ["Select and swap"
-                 latex-table-wizard--select-suffixes
-                 ""
-                 "Mark, kill and insert" latex-table-wizard--mark-suffixes]])
-
-(defvar latex-table-wizard-bindings-alist nil
-  "Alist specifying keys in transient prefix `latex-table-wizard-do'.
-
-The members of this alist are cons cells of the form:
-
-    (C . K)
-
-where C is the name of an interactive function and K is a string
-specifying the key (same syntax that `kbd' takes as input).
-
-For example adding this cons cell makes the key 'l' bound to
-`latex-table-wizard-right' in the transient prefix
-`latex-table-wizard-do':
-
-    (latex-table-wizard-right .  \"l\")")
-
-(defun latex-table-wizard-modify-bindings (&optional comm-keys-alist)
-  "Modify bindings in transient prefix `latex-table-wizard-do'.
-
-Modify according to the alist COMM-KEYS-ALIST: if nil is passed
-as an argument, use the value of
-`latex-table-wizard-bindings-alist'.
-
-The members of this alist are cons cells of the form:
-
-    (C . K)
-
-where C is the name of an interactive function and K is a string
-specifying the key (same syntax that `kbd' takes as input).
-
-For example adding this cons cell makes the key 'l' bound to
-`latex-table-wizard-right' in the transient prefix
-`latex-table-wizard-do':
-
-    (latex-table-wizard-right .  \"l\")"
-  (macroexpand
-   (transient-define-prefix latex-table-wizard-do ()
-     [:description "      LaTeX table wizard"
-                   ["Motion" latex-table-wizard--motion-suffixes]
-                   ["Swap"
-                    latex-table-wizard--swap-cell-suffixes
-                    ""
-                    latex-table-wizard--swap-line-suffixes
-                    ""
-                    "Other"
-                    latex-table-wizard--other-suffixes]
-                   ["Select and swap"
-                    latex-table-wizard--select-suffixes
-                    ""
-                    "Mark, kill and insert"
-                    latex-table-wizard--mark-suffixes]]))
-  (let* ((new-alist (or comm-keys-alist latex-table-wizard-bindings-alist))
-         (all-commands
-          (list latex-table-wizard--motion-suffixes
-                latex-table-wizard--mark-suffixes
-                latex-table-wizard--swap-cell-suffixes
-                latex-table-wizard--swap-line-suffixes
-                latex-table-wizard--select-suffixes
-                latex-table-wizard--other-suffixes))
-         (def-command-key-alist '()))
-    (dolist (l all-commands)
-      (dolist (x l)
-        (when (listp x)
-          (push (cons (nth 2 x) (nth 0 x)) def-command-key-alist))))
-    (dolist (x new-alist)
-      (let* ((comm (car x))
-             (new-key (cdr x))
-             (def-key (alist-get comm def-command-key-alist)))
-        (transient-suffix-put 'latex-table-wizard-do def-key :key new-key)))))
-
-(advice-add #'latex-table-wizard-do
-            :before #'latex-table-wizard-modify-bindings)
+    "Mark, kill and insert"
+    ;; latex-table-wizard--mark-suffixes
+    ("x" "exchange point and mark" exchange-point-and-mark :transient t)
+    ("m c" "mark cell" latex-table-wizard-mark-cell :transient t)
+    ("i c" "insert column right" latex-table-wizard-insert-column :transient t)
+    ("i r" "insert row below" latex-table-wizard-insert-row :transient t)
+    ("k c" "kill current column" latex-table-wizard-kill-column :transient t)
+    ("k r" "kill current row" latex-table-wizard-kill-row :transient t)]])
 
 ;;; Aesthetics
 
@@ -1246,7 +1159,7 @@ For example adding this cons cell makes the key 'l' bound to
       (overlay-put x 'face 'latex-table-wizard-background-face))))
 
 (defun latex-table-wizard--cleanup ()
-  "Remove overlays created by 'latex-table-wizard' in the buffer."
+  "Remove overlays created by \\='latex-table-wizard\\=' in the buffer."
   (setq latex-table-wizard--selection nil)
   (when-let ((lims latex-table-wizard--parsed-table-delims))
     (remove-overlays (point-min) (point-max) 'tabl-inside-ol t)
