@@ -19,7 +19,7 @@ Copyright (C) 2022 Enrico Flor.
 
      (a) The FSF’s Back-Cover Text is: “You have the freedom to copy and
      modify this GNU manual.”
-* Introduction
+* Overview
 
 One of org-mode's magic features is its table editing capabilities.
 The goal of this package is to replicate that luxury for LaTeX
@@ -30,8 +30,6 @@ change all the bindings, and can use all the commands without the
 transient interface, this readme will refer to the commands through
 the default bindings as they can be seen in the transient below.
 
-[[./default-transient.png][Transient interface]]
-
 The transient interface is invoked through the ~latex-table-wizard-do~
 command, and exited, as usual, with ~C-g~.
 
@@ -41,11 +39,7 @@ environments contains embedded tables (that is, other tabular
 environments inside of its cells).  The table is parsed so that these
 big cells are treated like any other cell.
 
-[[./move-01.gif]]
-
-[[./select-01.gif]]
-
-[[./swap-01.gif]]
+[[./wizard-01.gif]]
 
 * Available commands
 For now, we will assume a standard LaTeX syntax for tabular
@@ -186,6 +180,23 @@ selection is swapped with the current column or row or the
 corresponding portion thereof.  If you selected multiple cell that are
 not part of the same column or row, the swap won't happen
 (LaTeX-table-wizard doesn't know what to do).
+
+** Format the table
+
+Two more command fix the appearance of the table.  To "compress" the
+table by removing excess white space at the edges of each cell, call
+~latex-table-wizard-clean-whitespace~.
+
+Call ~latex-table-wizard-align~ if you want the columns to be vertically
+aligned too (and each row starting on its own line).  This alignment
+command tries to be smart and not be fooled by column or row
+delimiters embedded in a cell.
+
+| Command                             | Default key |
+|-------------------------------------+-------------|
+| ~latex-table-wizard-clean-whitespace~ | ~w~           |
+| ~latex-table-wizard-align~            | ~TAB~         |
+
 
 * Customization
 ** Change keybindings

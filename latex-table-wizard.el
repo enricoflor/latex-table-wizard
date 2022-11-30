@@ -750,6 +750,54 @@ THING is either 'cell', 'column' or 'row'."
 ;;; Interactive functions
 
 ;;;###autoload
+(defun latex-table-wizard-clean-whitespace ()
+  "Remove excess whitespace from cell borders."
+  (interactive)
+  (save-excursion
+    (let* ((table (latex-table-wizard--parse-table))
+           (extrs (latex-table-wizard--get-env-ends table)))
+      (whitespace-cleanup-region (car extrs) (cdr extrs))
+      (dolist (x (flatten-list (mapcar (lambda (x) (list (plist-get x :start)
+                                                         (plist-get x :end)))
+                                       table)))
+        (goto-char x)
+        (just-one-space)))))
+
+;;;###autoload
+(defun latex-table-wizard-align ()
+  "Align and format table at point.
+
+Have every row start on its own line and vertically align column delimiters."
+  (interactive)
+  (let ((max-col (thread-last (latex-table-wizard--parse-table)
+                              (mapcar (lambda (x) (plist-get x :column)))
+                              (delete-dups)
+                              (apply #'max))))
+    (save-excursion
+      (dolist (x (cl-remove-if-not (lambda (x) (eq 0 (plist-get x :column)))
+                                   (latex-table-wizard--parse-table)))
+        (goto-char (plist-get x :start))
+        (unless (looking-back "^[[:space:]]*")
+          (insert "\n")))
+      (latex-table-wizard-clean-whitespace)
+      (let ((count 0))
+        (while (<= count max-col)
+          (let ((line (cl-remove-if-not (lambda (x) (eq count
+                                                        (plist-get x :column)))
+                                        (latex-table-wizard--parse-table)))
+                (col-pos '()))
+            (dolist (cell line)
+              (goto-char (plist-get cell :end))
+              (push (current-column) col-pos))
+            (let ((longest (apply #'max col-pos)))
+              (dolist (cell line)
+                (goto-char (plist-get cell :end))
+                (when (< (current-column) longest)
+                  (insert (make-string (- longest (current-column))
+                                       (string-to-char " ")))))))
+          (setq count (1+ count)))))))
+
+;;;###autoload
 (defun latex-table-wizard-right (&optional n)
   "Move point N cells to the right.
 
@@ -1049,7 +1097,9 @@ at point.  If it is none of those object, return nil."
     ("N" "bottom" latex-table-wizard-bottom :transient t)
     ""
     ("a" "beginning of cell" latex-table-wizard-beginning-of-cell :transient t)
-    ("e" "end of cell" latex-table-wizard-end-of-cell :transient t)))
+    ("e" "end of cell" latex-table-wizard-end-of-cell :transient t)
+    ""
+    ("u" "universal argument" universal-argument :transient t)))
 
 (defconst latex-table-wizard--mark-suffixes
   '(("x" "exchange point and mark" exchange-point-and-mark :transient t)
@@ -1078,11 +1128,14 @@ at point.  If it is none of those object, return nil."
     ("d SPC" "deselect cell" latex-table-wizard-deselect-cell :transient t)
     ("d c" "select column" latex-table-wizard-deselect-column :transient t)
     ("d r" "select row" latex-table-wizard-deselect-row :transient t)
+    ""
     ("s" "swap selection" latex-table-wizard-swap :transient t)))
 
 (defconst latex-table-wizard--other-suffixes
-  '(("/" "undo" undo :transient t)
-    ("u" "universal argument" universal-argument :transient t)
+  '(("w" "compress table" latex-table-wizard-clean-whitespace :transient t)
+    ("TAB" "align table" latex-table-wizard-align :transient t)
+    ("/" "undo" undo :transient t)
+    ""
     ("RET" "done" transient-quit-one)))
 
 ;;;###autoload
