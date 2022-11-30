@@ -5,7 +5,7 @@
 ;; Author: Enrico Flor <enrico@eflor.net>
 ;; Maintainer: Enrico Flor <enrico@eflor.net>
 ;; URL: https://github.com/enricoflor/latex-table-wizard
-;; Version: 0.0.1
+;; Version: 0.0.2
 
 ;; Package-Requires: ((emacs "27.1") (auctex "12.1") (transient "0.3.7"))
 
@@ -327,6 +327,11 @@ Each value is an integer, S and E are markers."
         (when (looking-at-p "[[:space:]]*\\($\\|%\\)")
           ;; nothing interesting left between point and eol
           (forward-line))
+        ;; we need to make some space between the end of of the \begin
+        ;; macro and the start of the (0,0) cell
+        (if (looking-at-p "[[:space:]]")
+            (forward-char 1)
+          (insert " "))
         (let* ((col-re
                 (latex-table-wizard--disjoin
                  latex-table-wizard--current-col-delims))
