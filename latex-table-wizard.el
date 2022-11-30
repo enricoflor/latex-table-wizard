@@ -183,73 +183,9 @@ If the current environment is one that is mapped to something in
 If NAME is nil, skip any LaTeX macro that point is looking at."
   (let* ((n (or name (rx (one-or-more alnum))))
          (macro-re (concat "\\\\" n latex-table-wizard--macro-args-re)))
-    (unless (looking-back "[^\\\\]\\\\")
+    (unless (looking-back "[^\\\\]\\\\" (line-beginning-position))
       (when (looking-at macro-re)
         (match-end 0)))))
-
-(defsubst latex-table-wizard--get-cell-boundaries (col-re
-                                                   row-re
-                                                   &optional limit)
-  "Return boundaries of current cell (where point is).
-
-What is returned is a list of the form
-
-    (B E EOR)
-
-where B and E are markers (beginning and end of the cell), and
-EOR is t iff this cell is the rightmost cell in the current row,
-nil otherwise.
-
-COL-RE and ROW-RE are regular expressions matching column and row
-delimiters respectively.
-
-LIMIT is a buffer position at which the parsing stops, and
-defaults to `point-max' if nothing else is passed as the
-argument."
-  (let ((lim (or limit (point-max)))
-        (beg (point-marker))
-        (end)
-        (end-of-row))
-    (while (and (< (point) lim) (not end))
-      (cond ((and (looking-at "%")
-                  (not (looking-back "[^\\\\]\\\\")))
-             ;; the first step is important to avoid being fooled by
-             ;; column or row delimiters in comments!
-             (forward-line))
-            ((looking-at "[[:space:]]*\\\\begin{[[:alnum:]]+}")
-             (skip-syntax-forward " ")
-             (forward-char 1)
-             (LaTeX-find-matching-end))
-            ((looking-at (concat "[[:space:]]*" latex-table-wizard--macro-re))
-             (goto-char (match-end 0)))
-            ((looking-at col-re)
-             ;; a column delimiter: bingo
-             (goto-char (match-beginning 0))
-             (setq end (point-marker))
-             (goto-char (match-end 0)))
-            ((looking-at row-re)
-             ;; a row delimiter: bingo
-             (let ((end-of-previous-cell
-                    (progn (goto-char (1- (match-beginning 0)))
-                           (point-marker))))
-               (goto-char (match-end 0))
-               (setq end end-of-previous-cell
-                     end-of-row t)
-               (latex-table-wizard--skip-stuff lim)))
-            (t
-             ;; nothing special, just go one step forward
-             (forward-char 1))))
-    `(,beg ,end ,end-of-row)))
-
-(defsubst latex-table-wizard--get-env-ends (table)
-  "Given TABLE, return beginning and end of the environemnt.
-
-TABLE is a list of cell plists.  The return type is a cons
-cell (B . E) with B and E being markers."
-  (cons (apply #'min (mapcar (lambda (x) (plist-get x :start)) table))
-        (apply #'max (mapcar (lambda (x) (plist-get x :end)) table))))
-
-(defvar-local latex-table-wizard--parsed-table-delims nil)
 
 (defsubst latex-table-wizard--disjoin (str-list &optional sep)
   "Concatenate strings in STR-LIST with separtor SEP.
@@ -294,6 +230,71 @@ Stop the skipping at LIMIT (a buffer position or a marker)."
             (setq done t)))))
     (when new-start-of-line (goto-char new-start-of-line))))
 
+(defsubst latex-table-wizard--get-cell-boundaries (col-re
+                                                   row-re
+                                                   &optional limit)
+  "Return boundaries of current cell (where point is).
+
+What is returned is a list of the form
+
+    (B E EOR)
+
+where B and E are markers (beginning and end of the cell), and
+EOR is t iff this cell is the rightmost cell in the current row,
+nil otherwise.
+
+COL-RE and ROW-RE are regular expressions matching column and row
+delimiters respectively.
+
+LIMIT is a buffer position at which the parsing stops, and
+defaults to `point-max' if nothing else is passed as the
+argument."
+  (let ((lim (or limit (point-max)))
+        (beg (point-marker))
+        (end)
+        (end-of-row))
+    (while (and (< (point) lim) (not end))
+      (cond ((and (looking-at "%")
+                  (not (looking-back "[^\\\\]\\\\"
+                                     (line-beginning-position))))
+             ;; the first step is important to avoid being fooled by
+             ;; column or row delimiters in comments!
+             (forward-line))
+            ((looking-at "[[:space:]]*\\\\begin{[[:alnum:]]+}")
+             (skip-syntax-forward " ")
+             (forward-char 1)
+             (LaTeX-find-matching-end))
+            ((looking-at (concat "[[:space:]]*" latex-table-wizard--macro-re))
+             (goto-char (match-end 0)))
+            ((looking-at col-re)
+             ;; a column delimiter: bingo
+             (goto-char (match-beginning 0))
+             (setq end (point-marker))
+             (goto-char (match-end 0)))
+            ((looking-at row-re)
+             ;; a row delimiter: bingo
+             (let ((end-of-previous-cell
+                    (progn (goto-char (1- (match-beginning 0)))
+                           (point-marker))))
+               (goto-char (match-end 0))
+               (setq end end-of-previous-cell
+                     end-of-row t)
+               (latex-table-wizard--skip-stuff lim)))
+            (t
+             ;; nothing special, just go one step forward
+             (forward-char 1))))
+    `(,beg ,end ,end-of-row)))
+
+(defsubst latex-table-wizard--get-env-ends (table)
+  "Given TABLE, return beginning and end of the environemnt.
+
+TABLE is a list of cell plists.  The return type is a cons
+cell (B . E) with B and E being markers."
+  (cons (apply #'min (mapcar (lambda (x) (plist-get x :start)) table))
+        (apply #'max (mapcar (lambda (x) (plist-get x :end)) table))))
+
+(defvar-local latex-table-wizard--parsed-table-delims nil)
+
 (defun latex-table-wizard--parse-table ()
   "Parse table(-like) environment point is in.
 
@@ -318,8 +319,7 @@ Each value is an integer, S and E are markers."
                                          latex-table-wizard--macro-args-re)
                                         nil t)
                     (forward-char -1)
-                    (point-marker)))
-         (done))
+                    (point-marker))))
     (latex-table-wizard--set-current-values)
     (save-excursion
       (goto-char env-beg)
@@ -332,10 +332,6 @@ Each value is an integer, S and E are markers."
                  latex-table-wizard--current-col-delims))
                (row-re (latex-table-wizard--disjoin
                         latex-table-wizard--current-row-delims))
-               (hline-macro-re (concat
-                                (regexp-opt
-                                 latex-table-wizard--current-hline-macros)
-                                latex-table-wizard--macro-args-re))
                (data (latex-table-wizard--get-cell-boundaries
                       col-re row-re env-end)))
           (push `( :column ,col
@@ -523,6 +519,9 @@ The overlay has a non-nil value for the name property
                    `((t (:background ,(face-attribute 'region
                                                       :background))))))))
 
+(defvar latex-table-wizard--selection nil
+  "Current selection, a list of cell objects.")
+
 (defun latex-table-wizard--jump (dir &optional absolute count same-line)
   "Move point to the beginning of a cell in the table.
 
@@ -603,7 +602,7 @@ plists."
         (sort (cl-remove-if-not (lambda (x) (eq curr-value (plist-get x prop)))
                                 cells-list)
               (lambda (x y) (> (plist-get x other-prop)
-                               (plist-get x other-prop))))))))
+                               (plist-get y other-prop))))))))
 
 
 
@@ -717,9 +716,6 @@ TYPE is either 'cell', 'column' or 'row'."
         (latex-table-wizard--hl-cells
          (latex-table-wizard--get-thing type new-table))))))
 
-(defvar latex-table-wizard--selection nil
-  "Current selection, a list of cell objects.")
-
 (defun latex-table-wizard--select-thing (thing)
   "Add THING point is at to list `latex-table-wizard--selection'.
 
@@ -777,7 +773,7 @@ Have every row start on its own line and vertically align column delimiters."
       (dolist (x (cl-remove-if-not (lambda (x) (eq 0 (plist-get x :column)))
                                    (latex-table-wizard--parse-table)))
         (goto-char (plist-get x :start))
-        (unless (looking-back "^[[:space:]]*")
+        (unless (looking-back "^[[:space:]]*" (line-beginning-position))
           (insert "\n")))
       (latex-table-wizard-clean-whitespace)
       (let ((count 0))
@@ -894,8 +890,8 @@ of the column to the left of where point is."
 TABLE is a list of cell plists.  If it is nil, evaluate
 `latex-table-wizard--parse-table' to get a value."
   (interactive)
-  (let* ((cells-list (or table (latex-table-wizard--parse-table)))
-         (cell (latex-table-wizard--get-thing 'cell cells-list)))
+  (let* ((table (latex-table-wizard--parse-table))
+         (cell (latex-table-wizard--get-thing 'cell table)))
     (push-mark (plist-get cell :start) nil t)
     (goto-char (plist-get cell :end))))
 
@@ -953,7 +949,6 @@ TABLE is a list of cell plists.  If it is nil, evaluate
   (interactive)
   (save-excursion
     (let* ((table (latex-table-wizard--parse-table))
-           (current-cell (latex-table-wizard--get-thing 'cell table))
            (current-column (latex-table-wizard--get-thing 'column table)))
       (dolist (x current-column)
         (goto-char (plist-get x :end))
@@ -965,7 +960,6 @@ TABLE is a list of cell plists.  If it is nil, evaluate
   (interactive)
   (save-excursion
     (let* ((table (latex-table-wizard--parse-table))
-           (current-cell (latex-table-wizard--get-thing 'cell table))
            (current-column (latex-table-wizard--get-thing 'column table))
            (kills '()))
       (dolist (x current-column)
@@ -975,8 +969,8 @@ TABLE is a list of cell plists.  If it is nil, evaluate
                (e (plist-get next :start)))
           (push (buffer-substring b e) kills)
           (delete-region b e)))
-      (kill-region (latex-table-wizard--disjoin
-                    (nreverse kills) "\n")))))
+      (kill-new (latex-table-wizard--disjoin
+                 (nreverse kills) "\n")))))
 
 ;;;###autoload
 (defun latex-table-wizard-insert-row ()
@@ -1005,11 +999,9 @@ TABLE is a list of cell plists.  If it is nil, evaluate
   (interactive)
   (save-excursion
     (let* ((table (latex-table-wizard--parse-table))
-           (current-cell (latex-table-wizard--get-thing 'cell table))
-           (current-row (latex-table-wizard--get-thing 'row table)))
-      (thread-last (latex-table-wizard--get-env-ends current-row)
-                   (apply #'buffer-substring)
-                   (kill-region)))))
+           (b-e (latex-table-wizard--get-env-ends
+                 (latex-table-wizard--get-thing 'row table))))
+      (kill-region (car b-e) (cdr b-e)))))
 
 ;;;###autoload
 (defun latex-table-wizard-select-cell ()
@@ -1034,7 +1026,8 @@ TABLE is a list of cell plists.  If it is nil, evaluate
   (interactive)
   (let* ((table (latex-table-wizard--parse-table))
          (curr-cell (latex-table-wizard--get-thing 'cell table)))
-    (when (member curr-cell latex-table-wizard--selection))
+    (setq latex-table-wizard--selection
+          (remove curr-cell latex-table-wizard--selection))
     (latex-table-wizard--remove-overlays nil
                                          (plist-get curr-cell :start)
                                          (plist-get curr-cell :end))
@@ -1067,9 +1060,7 @@ at point.  If it is none of those object, return nil."
   (let* ((table (latex-table-wizard--parse-table))
          (other latex-table-wizard--selection)
          (type (latex-table-wizard--type-of-selection other))
-         (current (latex-table-wizard--get-thing type table))
-         (land-coord (cons (plist-get current :column)
-                           (plist-get current :row))))
+         (current (latex-table-wizard--get-thing type table)))
     (cond ((not type)
            (latex-table-wizard--cleanup)
            (setq latex-table-wizard--selection nil))
