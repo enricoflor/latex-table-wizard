@@ -81,7 +81,7 @@
 
 Capture group 1 matches the name of the macro.")
 
-(defconst latex-table-wizard-column-delimiters '("[^\\\\]&")
+(defconst latex-table-wizard-column-delimiters '("&")
   "List of regexps matching column delimiters.")
 
 (defconst latex-table-wizard-row-delimiters '("\\\\\\\\")
@@ -98,6 +98,21 @@ Capture group 1 matches the name of the macro.")
 Each member of this list is a string that would be between the
 \"\\\" and the arguments.")
 
+(defsubst latex-table-wizard--unescaped-p (&optional position)
+  "Return t if LaTeX macro starting at POSITION is not escaped.
+
+If POSITION is nil, use the value of `point'.
+
+A macro is escaped if it is preceded by a single \\='\\\\='."
+  (let ((p (or position (point))))
+    (save-excursion
+      (goto-char p)
+      (save-match-data
+        (looking-back "\\\\*" (line-beginning-position) t)
+        (let ((matched (buffer-substring-no-properties
+                        (match-beginning 0)
+                        (match-end 0))))
+          (when (cl-evenp (length matched)) t))))))
 
 ;; Every time latex-table-wizard--parse-table is evaluated, the values
 ;; of the variables below is set:
@@ -179,7 +194,7 @@ If the current environment is one that is mapped to something in
 If NAME is nil, skip any LaTeX macro that point is looking at."
   (let* ((n (or name (rx (one-or-more alnum))))
          (macro-re (concat "\\\\" n latex-table-wizard--macro-args-re)))
-    (unless (looking-back "[^\\\\]\\\\" (line-beginning-position))
+    (when (latex-table-wizard--unescaped-p)
       (when (looking-at macro-re)
         (match-end 0)))))
 
@@ -251,8 +266,7 @@ argument."
         (end-of-row))
     (while (and (< (point) lim) (not end))
       (cond ((and (looking-at "%")
-                  (not (looking-back "[^\\\\]\\\\"
-                                     (line-beginning-position))))
+                  (latex-table-wizard--unescaped-p))
              ;; the first step is important to avoid being fooled by
              ;; column or row delimiters in comments!
              (forward-line))
@@ -262,17 +276,21 @@ argument."
              (LaTeX-find-matching-end))
             ((looking-at (concat "[[:space:]]*" latex-table-wizard--macro-re))
              (goto-char (match-end 0)))
-            ((looking-at col-re)
+            ((and (looking-at col-re)
+                  (latex-table-wizard--unescaped-p))
              ;; a column delimiter: bingo
-             (goto-char (match-beginning 0))
              (setq end (point-marker))
              (goto-char (match-end 0)))
-            ((looking-at row-re)
+            ((and (looking-at row-re)
+                  (latex-table-wizard--unescaped-p))
              ;; a row delimiter: bingo
-             (let ((end-of-previous-cell
-                    (progn (goto-char (1- (match-beginning 0)))
+             (let ((after-del (save-excursion
+                                (goto-char (match-end 0))
+                                (point-marker)))
+                   (end-of-previous-cell
+                    (progn (goto-char (match-beginning 0))
                            (point-marker))))
-               (goto-char (match-end 0))
+               (goto-char after-del)
                (setq end end-of-previous-cell
                      end-of-row t)
                (latex-table-wizard--skip-stuff lim)))
@@ -1084,6 +1102,7 @@ at point.  If it is none of those object, return nil."
 
 ;;;###autoload (autoload 'latex-table-wizard-do "latex-table-wizard" nil t)
 (transient-define-prefix latex-table-wizard-do ()
+  "Edit table-like environment at point with a transient interface."
   [:description
    "      LaTeX table wizard"
    ["Motion"
