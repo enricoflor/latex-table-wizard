@@ -82,10 +82,10 @@
 Capture group 1 matches the name of the macro.")
 
 (defconst latex-table-wizard-column-delimiters '("&")
-  "List of regexps matching column delimiters.")
+  "List of strings that are column delimiters if unescaped.")
 
 (defconst latex-table-wizard-row-delimiters '("\\\\\\\\")
-  "List of regexps matching row delimiters.")
+  "List of strings that are row delimiters if unescaped.")
 
 (defvar latex-table-wizard-hline-macros '("cline"
                                           "vline"
@@ -318,6 +318,7 @@ form
     (:column C :row R :start S :end E).
 
 Each value is an integer, S and E are markers."
+  (latex-table-wizard--set-current-values)
   (let* ((cells-list '())
          (col 0)
          (row 0)
@@ -333,26 +334,25 @@ Each value is an integer, S and E are markers."
                                          latex-table-wizard--macro-args-re)
                                         nil t)
                     (forward-char -1)
-                    (point-marker))))
-    (latex-table-wizard--set-current-values)
+                    (point-marker)))
+         (col-re
+          (latex-table-wizard--disjoin
+           latex-table-wizard--current-col-delims))
+         (row-re (latex-table-wizard--disjoin
+                  latex-table-wizard--current-row-delims)))
     (save-excursion
       (goto-char env-beg)
+      ;; we need to make some space between the end of of the \begin
+      ;; macro and the start of the (0,0) cell
+      (if (looking-at-p "[[:space:]]")
+          (forward-char 1)
+        (insert " "))
       (while (< (point) env-end)
         (when (looking-at-p "[[:space:]]*\\($\\|%\\)")
           ;; nothing interesting left between point and eol
           (forward-line))
-        ;; we need to make some space between the end of of the \begin
-        ;; macro and the start of the (0,0) cell
-        (if (looking-at-p "[[:space:]]")
-            (forward-char 1)
-          (insert " "))
-        (let* ((col-re
-                (latex-table-wizard--disjoin
-                 latex-table-wizard--current-col-delims))
-               (row-re (latex-table-wizard--disjoin
-                        latex-table-wizard--current-row-delims))
-               (data (latex-table-wizard--get-cell-boundaries
-                      col-re row-re env-end)))
+        (let ((data (latex-table-wizard--get-cell-boundaries
+                     col-re row-re env-end)))
           (push `( :column ,col
                    :row ,row
                    :start ,(nth 0 data)
@@ -415,7 +415,7 @@ of DIR (either \\='next\\=', \\='previous\\=', \\='forward\\=' or
                   (cl-remove-if-not
                    (lambda (x) (eq (plist-get x curr-prop) curr-value)))
                   (mapcar (lambda (x) (plist-get x prop)))
-                  (apply 'max)))))
+                  (apply #'max)))))
     (thread-last table
                  (cl-remove-if-not
                   (lambda (x) (and (eq (plist-get x curr-prop) curr-value)
@@ -546,7 +546,10 @@ The overlay has a non-nil value for the name property
 (defsubst latex-table-wizard--locate-point (pos table)
   "Return cell from TABLE in which position POS is in.
 
-POS is a buffer position or a marker."
+POS is a buffer position or a marker.
+
+If POS is not in a cell in TABLE, it means it's between two
+cells: return the closest one."
   (let ((candidate (car (cl-remove-if-not
                          (lambda (x) (<= (plist-get x :start)
                                          pos
@@ -972,10 +975,11 @@ TABLE is a list of cell plists.  If it is nil, evaluate
   (interactive)
   (save-excursion
     (let* ((table (latex-table-wizard--parse-table))
-           (current-column (latex-table-wizard--get-thing 'column table)))
+           (current-column (latex-table-wizard--get-thing 'column table))
+           (col-del (car latex-table-wizard--current-col-delims)))
       (dolist (x current-column)
         (goto-char (plist-get x :end))
-        (insert " & ")))))
+        (insert " " col-del " ")))))
 
 ;;;###autoload
 (defun latex-table-wizard-kill-column ()
@@ -1001,21 +1005,24 @@ TABLE is a list of cell plists.  If it is nil, evaluate
   (interactive)
   (save-excursion
     (let* ((table (latex-table-wizard--parse-table))
+           (end-table (cdr (latex-table-wizard--get-env-ends table)))
            (current-cell (latex-table-wizard--get-thing 'cell table))
            (current-row (latex-table-wizard--get-thing 'row table))
            (last-in-row (latex-table-wizard--get-extreme 'forward
                                                          table
-                                                         current-cell)))
+                                                         current-cell))
+           (row-del (car latex-table-wizard--current-row-delims))
+           (col-del (car latex-table-wizard--current-col-delims)))
       (goto-char (plist-get last-in-row :end))
-      (if (looking-at (concat "[[:space:]]*\\\\\\\\"))
-          (goto-char (match-end 0))
-        (insert "\\\\"))
-      (insert "\n")
+      (if (looking-at (concat "[[:space:]]*" row-del))
+          (progn (goto-char (match-end 0))
+                 (latex-table-wizard--skip-stuff end-table))
+        (insert row-del "\n"))
       (let ((how-many (length current-row)))
         (dotimes (i (1- how-many))
           (ignore i)
-          (insert " &"))
-        (insert " \\\\")))))
+          (insert " " col-del))
+        (insert " " row-del "\n")))))
 
 ;;;###autoload
 (defun latex-table-wizard-kill-row ()
