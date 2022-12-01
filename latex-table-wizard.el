@@ -1169,7 +1169,7 @@ at point.  If it is none of those object, return nil."
 
 ;;; Aesthetics
 
-(defface latex-table-wizard-background-face
+(defface latex-table-wizard-background
   '((t (:foreground "gray40")))
   "Face for hiding non-table buffer content.")
 
@@ -1182,7 +1182,7 @@ at point.  If it is none of those object, return nil."
                 ,(make-overlay tab-e (point-max)))))
     (dolist (x ols)
       (overlay-put x 'tabl-outside-ol t)
-      (overlay-put x 'face 'latex-table-wizard-background-face))))
+      (overlay-put x 'face 'latex-table-wizard-background))))
 
 (defun latex-table-wizard--cleanup ()
   "Remove all overlays created by \\='latex-table-wizard\\='.
