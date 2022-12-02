@@ -281,11 +281,11 @@ cells if you want to change the layout of the transient interface.
 Remember the default values used for parsing table environments:
 
 #+begin_src emacs-lisp
-(defconst latex-table-wizard-column-delimiters '("[^\\\\]&")
-  "List of regexps matching column delimiters.")
+(defconst latex-table-wizard-column-delimiters '("&")
+  "List of strings that are column delimiters if unescaped.")
 
 (defconst latex-table-wizard-row-delimiters '("\\\\\\\\")
-  "List of regexps matching row delimiters.")
+  "List of strings that are row delimiters if unescaped.")
 
 (defvar latex-table-wizard-hline-macros '("hline"
                                           "midrule"
