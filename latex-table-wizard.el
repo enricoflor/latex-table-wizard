@@ -40,16 +40,50 @@
 ;; movement commands that specfically target cells in the four
 ;; directions of motion.
 
-;; By default, the syntax this package expects is the one of standards
-;; LaTeX tabular environments, whereby "&" separates columns and "\\"
-;; separates rows.  Additional, or different, separators can be added
-;; by appending the correct regexp strings to the variable
-;; latex-table-wizard-column-delimiters and
-;; latex-table-wizard-row-delimiters.
-
 ;; This package tries to be smart and not be fooled by the presence of
 ;; embedded environments and embedded tables (that is, a table inside
 ;; of the cell of a table).
+
+;; The only command you need to remember (and perhaps bind a
+;; conveniente key to) is latex-table-wizard-do.  This is actually a
+;; transient prefix, so that all the other commands will be available
+;; from a prompt in the echo area.  All the commands provided by this
+;; package (including latex-table-wizard-do) assume that point is
+;; inside of the table-like enviornment you want to edit when they are
+;; called.
+
+;; The keybinding set by default in the prefix latex-table-wizard-do
+;; are inspired to some extent by Emacs defaults.  If you want to
+;; change these keybindings or change the layout of the transient
+;; interface in any way you should redefine the transient prefix in
+;; your configuration (or define a new one with another name), by
+;; taking inspiration from the one defined in this file (the macro
+;; that does that is called transient-define-prefix).  Check out the
+;; documentation transient.el and
+;;
+;;   M-x describe-function transient-define-prefix
+
+;; By default, the syntax this package expects is the one of standards
+;; LaTeX tabular environments, whereby "&" separates columns and "\\"
+;; separates rows.  Additional, or different, types of table-like
+;; environments (with their own syntax separators) can be added by the
+;; user.  This is done by adding mappings to
+;; latex-table-wizard-new-environments-alist.  Suppose I want to
+;; define a new table like environment whose name is "mytable", whose
+;; column and row separators are strings like "\COL" and "\ROW", and
+;; the LaTeX macro to add a horizontal line is "\myhline{}":
+
+;;  \begin{mytable}
+;;      ...
+;;  \end{mytable}
+
+;; For latex-table-wizard to handle this table, just add the following
+;; cons cell to latex-table-wizard-new-environments-alist:
+
+;;  '("mytable" . (:col '("\\COL") :row '("\\ROW") :lines '("myhline")))
+
+;; Each value is a list of strings to allow for more than one macro to
+;; have the same function.
 
 ;;; Code:
 
@@ -136,7 +170,7 @@ The cdr of each mapping is a property list with three keys:
    :row
    :lines
 
-The values for :col and :row are two lists of regexps.
+The values for :col and :row are two lists of strings.
 
 The value for :lines is a list of strings just like is the case
 for `latex-table-wizard-hline-macros'.")
