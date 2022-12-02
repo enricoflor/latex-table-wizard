@@ -751,20 +751,18 @@ THING is either \\='cell\\=', \\='column\\=' or \\='row\\='."
         (setq latex-table-wizard--selection
               (cons sel latex-table-wizard--selection))
       (setq latex-table-wizard--selection sel))
-    (message (format "%s selected for swapping"
-                     (cond ((eq thing 'cell)
-                            (format "Cell (%s,%s)"
-                                    (plist-get sel :column)
-                                    (plist-get sel :row)))
-                           ((eq thing 'row)
-                            (format "Row %s"
-                                    (plist-get (car sel) :row)))
-                           (t
-                            (format "Column %s"
-                                    (plist-get (car sel) :column))))))
-    (if (eq thing 'cell)
-        (latex-table-wizard--hl-cells `(,sel))
-      (latex-table-wizard--hl-cells sel))))
+    (cond ((eq thing 'cell)
+           (message "Cell (%s,%s) selected for swapping"
+                    (plist-get sel :column)
+                    (plist-get sel :row))
+           (latex-table-wizard--hl-cells `(,sel)))
+          ((eq thing 'row)
+           (message "Row %s selected for swapping"
+                    (plist-get (car sel) :row))
+           (latex-table-wizard--hl-cells sel))
+          (t (message "Column %s selected for swapping"
+                      (plist-get (car sel) :column))
+             (latex-table-wizard--hl-cells sel)))))
 
 
 
