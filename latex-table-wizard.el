@@ -132,7 +132,7 @@ Capture group 1 matches the name of the macro.")
 Each member of this list is a string that would be between the
 \"\\\" and the arguments.")
 
-(defsubst latex-table-wizard--unescaped-p (&optional position)
+(cl-defsubst latex-table-wizard--unescaped-p (&optional position)
   "Return t if LaTeX macro starting at POSITION is not escaped.
 
 If POSITION is nil, use the value of `point'.
@@ -175,7 +175,7 @@ The values for :col and :row are two lists of strings.
 The value for :lines is a list of strings just like is the case
 for `latex-table-wizard-hline-macros'.")
 
-(defsubst latex-table-wizard--set-current-values ()
+(defun latex-table-wizard--set-current-values ()
   "Set temporary values that specify the syntax of the environment.
 
 If the current environment is one that is mapped to something in
@@ -222,7 +222,7 @@ If the current environment is one that is mapped to something in
 ;; plists.                                                           ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defsubst latex-table-wizard--end-of-macro (&optional name)
+(cl-defsubst latex-table-wizard--end-of-macro (&optional name)
   "If looking at unescaped macro named NAME, go to its end.
 
 If NAME is nil, skip any LaTeX macro that point is looking at."
@@ -232,14 +232,14 @@ If NAME is nil, skip any LaTeX macro that point is looking at."
       (when (looking-at macro-re)
         (match-end 0)))))
 
-(defsubst latex-table-wizard--disjoin (str-list &optional sep)
+(cl-defsubst latex-table-wizard--disjoin (str-list &optional sep)
   "Concatenate strings in STR-LIST with separtor SEP.
 
 If SEP is nil, the separator used is \"\\\\|\""
   (let ((separator (or sep "\\|")))
     (mapconcat #'identity str-list separator)))
 
-(defsubst latex-table-wizard--skip-stuff (limit)
+(cl-defsubst latex-table-wizard--skip-stuff (limit)
   "Skip comments, blank space and hline macros.
 
 Hline macros are LaTeX macros whose name is a string in
@@ -269,15 +269,15 @@ Stop the skipping at LIMIT (a buffer position or a marker)."
           (when (looking-at "\n\\|%")
             (forward-line)
             (setq new-start-of-line (point)))
-          (when (eq (point) temp-pos)
+          (when (= (point) temp-pos)
             ;; we haven't moved since trying to skip whitespace, we
             ;; are done here.
             (setq done t)))))
     (when new-start-of-line (goto-char new-start-of-line))))
 
-(defsubst latex-table-wizard--get-cell-boundaries (col-re
-                                                   row-re
-                                                   &optional limit)
+(cl-defsubst latex-table-wizard--get-cell-boundaries (col-re
+                                                      row-re
+                                                      &optional limit)
   "Return boundaries of current cell (where point is).
 
 What is returned is a list of the form
@@ -333,7 +333,7 @@ argument."
              (forward-char 1))))
     `(,beg ,end ,end-of-row)))
 
-(defsubst latex-table-wizard--get-env-ends (table)
+(cl-defsubst latex-table-wizard--get-env-ends (table)
   "Given TABLE, return beginning and end of the environemnt.
 
 TABLE is a list of cell plists.  The return type is a cons
@@ -408,29 +408,44 @@ Each value is an integer, S and E are markers."
           (latex-table-wizard--get-env-ends cells-list))
     cells-list))
 
-(defsubst latex-table-wizard--get-cell-pos (column row table)
-  "Return the cell plist from TABLE at (COLUMN, ROW) position."
-  (car (cl-remove-if-not
-        (lambda (x) (and (eq column (plist-get x :column))
-                         (eq row (plist-get x :row))))
-        table)))
+(cl-defsubst latex-table-wizard--get-cell-pos (table prop-val1
+                                                     &optional prop-val2)
+  "Return the cell plist from TABLE at specific position.
 
-(defsubst latex-table-wizard--sort (dir x y)
+The position is given by PROP-VAL1 and PROP-VAL2, each of which
+is a cons cell of the form (P . V), where P is either
+\\=':column\\=' or \\=':row\\=' and V is the corresponding value.
+
+If PROP-VAL2 is nil, it is assumed that TABLE is a list of cells
+that only differ for the property in the car of PROP-VAL1 (in
+other words, that TABLE is either a column or a row)"
+  (let ((check (if prop-val2
+                   #'(= (cdr prop-val2) (plist-get x (car prop-val2)))
+                 t)))
+    (catch 'cell
+      (dolist (x table)
+        (when (and (= (cdr prop-val1) (plist-get x (car prop-val1))) check)
+          (throw 'cell x)))
+      nil)))
+
+(cl-defsubst latex-table-wizard--sort (dir x y)
   "Return t if cell X precedes Y.
 
 Precedence depends on the value of DIR (either \\='next\\=',
 \\='previous\\=', \\='forward\\=' or \\='backward\\=')."
   (let ((rows `(,(plist-get x :row) ,(plist-get y :row)))
-        (cols `(,(plist-get x :column) ,(plist-get y :column))))
-    (if (or (eq dir 'next) (eq dir 'previous))
-        (if (apply #'eq cols)
-            (apply #'< rows)
-          (apply #'< cols))
-      (if (apply #'eq rows)
-          (apply #'< cols)
-        (apply #'< rows)))))
+        (cols `(,(plist-get x :column) ,(plist-get y :column)))
+        (vert (or (eq dir 'next) (eq dir 'previous))))
+    (cond ((and vert (apply #'= cols))
+           (apply #'< rows))
+          (vert
+           (apply #'< cols))
+          ((apply #'= rows)
+           (apply #'< cols))
+          (t
+           (apply #'< rows)))))
 
-(defsubst latex-table-wizard--get-extreme (dir table current-cell)
+(cl-defun latex-table-wizard--get-extreme (dir table current-cell)
   "Return the last cell in a certain row or cell from TABLE.
 
 The goal is to get to the last cell in the same row or same
@@ -439,26 +454,27 @@ column as CURRENT-CELL.
 Whether to look for the last column or row depends on the value
 of DIR (either \\='next\\=', \\='previous\\=', \\='forward\\=' or
 \\='backward\\=')."
-  (let* ((prop (if (or (eq dir 'backward) (eq dir 'forward)) :column :row))
-         (curr-prop (if (eq prop :column) :row :column))
-         (curr-value (plist-get current-cell curr-prop))
-         (res (if (or (eq dir 'backward) (eq dir 'previous))
-                  0
-                (thread-last
-                  table
-                  (cl-remove-if-not
-                   (lambda (x) (eq (plist-get x curr-prop) curr-value)))
-                  (mapcar (lambda (x) (plist-get x prop)))
-                  (apply #'max)))))
-    (thread-last table
-                 (cl-remove-if-not
-                  (lambda (x) (and (eq (plist-get x curr-prop) curr-value)
-                                   (eq (plist-get x prop) res))))
-                 (car))))
+  (let* ((different-prop (if (or (eq dir 'backward) (eq dir 'forward))
+                             :column
+                           :row))
+         (same-prop (if (eq different-prop :column) :row :column))
+         (same-value (plist-get current-cell same-prop))
+         (different-value
+          (if (or (eq dir 'backward) (eq dir 'previous))
+              0
+            (thread-last
+              table
+              (cl-remove-if-not
+               (lambda (x) (= (plist-get x same-prop) same-value)))
+              (mapcar (lambda (x) (plist-get x different-prop)))
+              (apply #'max)))))
+    (latex-table-wizard--get-cell-pos table
+                                      `(,same-prop . ,same-value)
+                                      `(,different-prop . ,different-value))))
 
-(defsubst latex-table-wizard--point-on-regexp-p (regexp
-                                                 &optional capture-group
-                                                 search-beginning-pos)
+(cl-defsubst latex-table-wizard--point-on-regexp-p (regexp
+                                                    &optional capture-group
+                                                    search-beginning-pos)
   "Return non-nil if point is on a substring matched by REGEXP.
 
 If CAPTURE-GROUP is non-nil, limit the condition to the substring
@@ -513,8 +529,8 @@ current DIR."
                                     :column))
                             (other-prop (if (eq prop :row) :column :row)))
                        (sort (cl-remove-if-not
-                              (lambda (x) (eq (plist-get x prop)
-                                              (plist-get curr prop)))
+                              (lambda (x) (= (plist-get x prop)
+                                             (plist-get curr prop)))
                               table)
                              (lambda (x y) (< (plist-get x other-prop)
                                               (plist-get y other-prop)))))
@@ -523,8 +539,7 @@ current DIR."
                            (latex-table-wizard--sort dir x y)))))
          (cell-num (length sorted))
          (now (cl-position curr sorted :test 'equal))
-         (new-index (if (or (eq dir 'next)
-                            (eq dir 'forward))
+         (new-index (if (or (eq dir 'next) (eq dir 'forward))
                         (+ now count)
                       (- now count))))
     (cond ((and (>= new-index 0)
@@ -539,7 +554,7 @@ current DIR."
            (nth (- cell-num (abs new-index)) sorted))
           (t nil))))
 
-(defsubst latex-table-wizard--remove-overlays (&optional table beg end)
+(defun latex-table-wizard--remove-overlays (&optional table beg end)
   "Remove table internal overlays generated by latex-table-wizard.
 
 These are the overlays that have a non-nil value for the name
@@ -557,7 +572,7 @@ given, a value is retrieved with
            (lims (latex-table-wizard--get-env-ends tab)))
       (remove-overlays (car lims) (cdr lims) 'tabl-inside-ol t))))
 
-(defsubst latex-table-wizard--hl-cells (list-of-cells)
+(defun latex-table-wizard--hl-cells (list-of-cells)
   "Highlight cells in LIST-OF-CELLS with an overlay.
 
 The overlay has a non-nil value for the name property
@@ -576,7 +591,7 @@ The overlay has a non-nil value for the name property
 (defvar latex-table-wizard--selection nil
   "Current selection, a list of cell objects.")
 
-(defsubst latex-table-wizard--locate-point (pos table)
+(cl-defsubst latex-table-wizard--locate-point (pos table)
   "Return cell from TABLE in which position POS is in.
 
 POS is a buffer position or a marker.
@@ -592,10 +607,10 @@ cells: return the closest one."
     (cond (candidate
            candidate)
           ((< pos (car ends))
-           (latex-table-wizard--get-cell-pos 0 0 table))
+           (latex-table-wizard--get-cell-pos table '(:column . 0) '(:row . 0)))
           ((> pos (cdr ends))
            (car (cl-remove-if-not
-                 (lambda (x) (eq (plist-get x :end) (cdr ends)))
+                 (lambda (x) (= (plist-get x :end) (cdr ends)))
                  table)))
           (t (goto-char (apply #'max
                                (mapcar (lambda (x) (plist-get x :start))
@@ -603,7 +618,7 @@ cells: return the closest one."
                                         (lambda (x) (< (plist-get x :end) pos))
                                         table))))))))
 
-(defsubst latex-table-wizard--get-thing (thing &optional table)
+(cl-defsubst latex-table-wizard--get-thing (thing &optional table)
   "Return THING point is in.
 
 THING can be either \\='cell\\=', \\='column\\=' or \\='row\\='.
@@ -621,7 +636,7 @@ plists."
       (let* ((prop (if (eq thing 'row) :row :column))
              (other-prop (if (eq thing 'row) :column :row))
              (curr-value (plist-get curr prop)))
-        (sort (cl-remove-if-not (lambda (x) (eq curr-value (plist-get x prop)))
+        (sort (cl-remove-if-not (lambda (x) (= curr-value (plist-get x prop)))
                                 cells-list)
               (lambda (x y) (> (plist-get x other-prop)
                                (plist-get y other-prop))))))))
@@ -666,7 +681,7 @@ If SAME-LINE is non-nil, never leave current column or row."
 
 ;;; Swapping functions
 
-(defsubst latex-table-wizard--swap-substrings (x y)
+(cl-defsubst latex-table-wizard--swap-substrings (x y)
   "Swap two buffer substrings.
 
 X and Y are each a list of the form \\='(B E)\\=', where B and E
@@ -690,18 +705,18 @@ buffer substring."
       (insert x-string)
       (just-one-space))))
 
-(defsubst latex-table-wizard--swap-cells (x y)
+(cl-defsubst latex-table-wizard--swap-cells (x y)
   "Evaluate `latex-table-wizard--swap-substrings' on cells X and Y."
   (latex-table-wizard--swap-substrings `(,(plist-get x :start)
                                          ,(plist-get x :end))
                                        `(,(plist-get y :start)
                                          ,(plist-get y :end))))
 
-(defsubst latex-table-wizard--get-this-value-prop (line prop value)
-  "Return the cell from list LINE that has VALUE for property PROP."
-  (car (cl-remove-if-not (lambda (x) (eq value (plist-get x prop))) line)))
+(cl-defsubst latex-table-wizard--get-this-value-prop (&key line property value)
+  "Return the cell from list LINE with VALUE for PROPERTY."
+  (car (cl-remove-if-not (lambda (x) (= value (plist-get x property))) line)))
 
-(defsubst latex-table-wizard--type-of-selection (sel)
+(cl-defsubst latex-table-wizard--type-of-selection (sel)
   "Return type of list of cells SEL.
 
 Non-nil values that are returned are is either \\='cell\\=' (if
@@ -711,19 +726,11 @@ If SEL is a list of more than one cell such that not all the
 cells have the same value for either :column or :row, it means
 that this selection is neither a column or a row, and nil is
 returned."
-  (cond ((eq 1 (length sel))
+  (cond ((= 1 (length sel))
          'cell)
-        ((thread-last sel
-                      (mapcar (lambda (x) (plist-get x :column)))
-                      (delete-dups)
-                      (length)
-                      (eq 1))
+        ((apply #'= (mapcar (lambda (x) (plist-get x :column))))
          'column)
-        ((thread-last sel
-                      (mapcar (lambda (x) (plist-get x :row)))
-                      (delete-dups)
-                      (length)
-                      (eq 1))
+        ((apply #'= (mapcar (lambda (x) (plist-get x :row))))
          'row)
         (t nil)))
 
@@ -734,8 +741,8 @@ TYPE is either \\='column\\=' or \\='row\\='."
   (save-excursion
     (let ((prop (if (eq type 'column) :row :column)))
       (dolist (x line1)
-        (let ((other (latex-table-wizard--get-this-value-prop
-                      line2 prop (plist-get x prop))))
+        (let ((other (latex-table-wizard--get-cell-pos
+                      line2 `(,prop . ,(plist-get x prop)))))
           (latex-table-wizard--swap-cells x other))))))
 
 
@@ -764,9 +771,9 @@ TYPE is either \\='cell\\=', \\='column\\=' or \\='row\\='."
         (latex-table-wizard--swap-line type current other)))
     (let ((new-table (latex-table-wizard--parse-table)))
       (goto-char (plist-get (latex-table-wizard--get-cell-pos
-                             (plist-get other-cell :column)
-                             (plist-get other-cell :row)
-                             new-table)
+                             new-table
+                             `(:column . ,(plist-get other-cell :column))
+                             `(:row . ,(plist-get other-cell :row)))
                             :start))
       (latex-table-wizard--remove-overlays new-table)
       (if (eq type 'cell)
@@ -828,7 +835,7 @@ delimiters."
                               (delete-dups)
                               (apply #'max))))
     (save-excursion
-      (dolist (x (cl-remove-if-not (lambda (x) (eq 0 (plist-get x :column)))
+      (dolist (x (cl-remove-if-not (lambda (x) (= 0 (plist-get x :column)))
                                    (latex-table-wizard--parse-table)))
         (goto-char (plist-get x :start))
         (unless (looking-back "^[[:space:]]*" (line-beginning-position))
@@ -836,8 +843,8 @@ delimiters."
       (latex-table-wizard-clean-whitespace)
       (let ((count 0))
         (while (<= count max-col)
-          (let ((line (cl-remove-if-not (lambda (x) (eq count
-                                                        (plist-get x :column)))
+          (let ((line (cl-remove-if-not (lambda (x) (= count
+                                                       (plist-get x :column)))
                                         (latex-table-wizard--parse-table)))
                 (col-pos '()))
             (dolist (cell line)
@@ -1205,7 +1212,7 @@ at point.  If it is none of those object, return nil."
   '((t (:foreground "gray40")))
   "Face for hiding non-table buffer content.")
 
-(defsubst latex-table-wizard--hide-rest ()
+(defun latex-table-wizard--hide-rest ()
   "Grey out parts of buffer outside of table at point."
   (latex-table-wizard--parse-table)
   (let* ((tab-b (car latex-table-wizard--parsed-table-delims))
