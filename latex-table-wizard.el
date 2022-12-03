@@ -36,20 +36,23 @@
 ;; output text into aligned colums.
 
 ;; With this package you can navigate and edit these tables easily
-;; even if the source text is not aligned, because you will have
-;; movement commands that specfically target cells in the four
-;; directions of motion.
+;; even if the source text is not aligned (although there is a command
+;; to align them), because you will have movement commands that
+;; specfically target cells in the four directions of motion in a
+;; logical way.  This means that these movement and edit commands see
+;; the table as a set of pairs of values (for column and row) instead
+;; of as a buffer substring.
 
-;; This package tries to be smart and not be fooled by the presence of
-;; embedded environments and embedded tables (that is, a table inside
-;; of the cell of a table).
+;; This package tries to be smart and parse the table without being
+;; fooled by the presence of embedded environments and embedded tables
+;; (that is, a table inside of the cell of a table).
 
 ;; The only command you need to remember (and perhaps bind a
 ;; conveniente key to) is latex-table-wizard-do.  This is actually a
 ;; transient prefix, so that all the other commands will be available
 ;; from a prompt in the echo area.  All the commands provided by this
 ;; package (including latex-table-wizard-do) assume that point is
-;; inside of the table-like enviornment you want to edit when they are
+;; inside of the table-like environment you want to edit when they are
 ;; called.
 
 ;; The keybinding set by default in the prefix latex-table-wizard-do
