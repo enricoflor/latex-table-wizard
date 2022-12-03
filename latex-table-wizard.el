@@ -5,7 +5,7 @@
 ;; Author: Enrico Flor <enrico@eflor.net>
 ;; Maintainer: Enrico Flor <enrico@eflor.net>
 ;; URL: https://github.com/enricoflor/latex-table-wizard
-;; Version: 0.0.3
+;; Version: 0.0.4
 
 ;; Package-Requires: ((emacs "27.1") (auctex "12.1") (transient "0.3.7"))
 
@@ -338,8 +338,9 @@ argument."
 
 TABLE is a list of cell plists.  The return type is a cons
 cell (B . E) with B and E being markers."
-  (cons (apply #'min (mapcar (lambda (x) (plist-get x :start)) table))
-        (apply #'max (mapcar (lambda (x) (plist-get x :end)) table))))
+  `(,(apply #'min (mapcar (lambda (x) (plist-get x :start)) table))
+    .
+    ,(apply #'max (mapcar (lambda (x) (plist-get x :end)) table))))
 
 (defvar-local latex-table-wizard--parsed-table-delims nil)
 
@@ -405,7 +406,7 @@ Each value is an integer, S and E are markers."
                         (looking-at-p row-re)))
             (re-search-forward row-re nil t)))))
     (setq latex-table-wizard--parsed-table-delims
-          (latex-table-wizard--get-env-ends cells-list))
+          `(,env-beg . ,env-end))
     cells-list))
 
 (cl-defsubst latex-table-wizard--get-cell-pos (table prop-val1
