@@ -713,10 +713,6 @@ buffer substring."
                                        `(,(plist-get y :start)
                                          ,(plist-get y :end))))
 
-(cl-defsubst latex-table-wizard--get-this-value-prop (&key line property value)
-  "Return the cell from list LINE with VALUE for PROPERTY."
-  (car (cl-remove-if-not (lambda (x) (= value (plist-get x property))) line)))
-
 (cl-defsubst latex-table-wizard--type-of-selection (sel)
   "Return type of list of cells SEL.
 
