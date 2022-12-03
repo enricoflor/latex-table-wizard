@@ -424,11 +424,13 @@ If PROP-VAL2 is nil, it is assumed that TABLE is a list of cells
 that only differ for the property in the car of PROP-VAL1 (in
 other words, that TABLE is either a column or a row)"
   (let ((check (if prop-val2
-                   #'(= (cdr prop-val2) (plist-get x (car prop-val2)))
-                 t)))
+                   (lambda (x) (= (cdr prop-val2)
+                                  (plist-get x (car prop-val2))))
+                 (lambda (x) t))))
     (catch 'cell
       (dolist (x table)
-        (when (and (= (cdr prop-val1) (plist-get x (car prop-val1))) check)
+        (when (and (= (cdr prop-val1) (plist-get x (car prop-val1)))
+                   (funcall check x))
           (throw 'cell x)))
       nil)))
 
@@ -728,9 +730,9 @@ that this selection is neither a column or a row, and nil is
 returned."
   (cond ((= 1 (length sel))
          'cell)
-        ((apply #'= (mapcar (lambda (x) (plist-get x :column))))
+        ((apply #'= (mapcar (lambda (x) (plist-get x :column)) sel))
          'column)
-        ((apply #'= (mapcar (lambda (x) (plist-get x :row))))
+        ((apply #'= (mapcar (lambda (x) (plist-get x :row)) sel))
          'row)
         (t nil)))
 
