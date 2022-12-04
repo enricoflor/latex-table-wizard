@@ -47,6 +47,9 @@ environments, where ~&~ delimits columns and ~\\~ rows (see [[#user-defined-envs
 as to how to specify additional syntaxes).
 
 Whenever we say "current" we mean "at point".
+
+** Start editing
+Just call ~latex-table-wizard-do~ when point is inside of table-like environment.
 ** Relative motion commands
 
 These commands move point N cells to the right, left, down, and up.  N
@@ -208,7 +211,7 @@ The default definition, which is the one assumed in this readme so
 far, is below:
 
 #+begin_src emacs-lisp
-(transient-define-prefix latex-table-wizard-do ()
+(transient-define-prefix latex-table-wizard-prefix ()
   [:description
    "      LaTeX table wizard"
    ["Motion"

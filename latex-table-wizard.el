@@ -5,7 +5,7 @@
 ;; Author: Enrico Flor <enrico@eflor.net>
 ;; Maintainer: Enrico Flor <enrico@eflor.net>
 ;; URL: https://github.com/enricoflor/latex-table-wizard
-;; Version: 0.0.4
+;; Version: 0.0.5
 
 ;; Package-Requires: ((emacs "27.1") (auctex "12.1") (transient "0.3.7"))
 
@@ -416,7 +416,7 @@ Each value is an integer, S and E are markers."
                                                &optional prop-val2)
   "Return the cell plist from TABLE at specific position.
 
-The position is given by PROP-VAL1 and prop-val2, each of which
+The position is given by PROP-VAL1 and PROP-VAL2, each of which
 is a cons cell of the form (P . V), where P is either
 \\=':column\\=' or \\=':row\\=' and V is the corresponding value.
 
@@ -1150,9 +1150,7 @@ at point.  If it is none of those object, return nil."
 
 ;;; Transient
 
-;;;###autoload (autoload 'latex-table-wizard-do "latex-table-wizard" nil t)
-(transient-define-prefix latex-table-wizard-do ()
-  "Edit table-like environment at point with a transient interface."
+(transient-define-prefix latex-table-wizard-prefix ()
   [:description
    "      LaTeX table wizard"
    ["Motion"
@@ -1258,8 +1256,14 @@ Only remove them in current buffer."
                  (1-)
                  (goto-char))))
 
-(advice-add #'latex-table-wizard-do :after #'latex-table-wizard--get-out)
-(advice-add #'latex-table-wizard-do :after #'latex-table-wizard--hide-rest)
+;;;###autoload
+(defun latex-table-wizard-do ()
+  "Edit table-like environment with a transient interface."
+  (interactive)
+  (latex-table-wizard--get-out)
+  (latex-table-wizard--hide-rest)
+  (call-interactively #'latex-table-wizard-prefix))
+
 (advice-add #'transient-quit-one :before #'latex-table-wizard--cleanup)
 
 (provide 'latex-table-wizard)
