@@ -594,7 +594,7 @@ The overlay has a non-nil value for the name property
                    `((t (:background ,(face-attribute 'region
                                                       :background))))))))
 
-(defvar latex-table-wizard--selection nil
+(defvar-local latex-table-wizard--selection nil
   "Current selection, a list of cell objects.")
 
 (cl-defsubst latex-table-wizard--locate-point (pos table)
