@@ -412,25 +412,27 @@ Each value is an integer, S and E are markers."
           `(,env-beg . ,env-end))
     cells-list))
 
-(cl-defsubst latex-table-wizard--get-cell-pos (table prop-val1
-                                                     &optional prop-val2)
+(defun latex-table-wizard--get-cell-pos (table prop-val1
+                                               &optional prop-val2)
   "Return the cell plist from TABLE at specific position.
 
-The position is given by PROP-VAL1 and PROP-VAL2, each of which
+The position is given by PROP-VAL1 and prop-val2, each of which
 is a cons cell of the form (P . V), where P is either
 \\=':column\\=' or \\=':row\\=' and V is the corresponding value.
 
-If PROP-VAL2 is nil, it is assumed that TABLE is a list of cells
+If prop-val2 is nil, it is assumed that TABLE is a list of cells
 that only differ for the property in the car of PROP-VAL1 (in
 other words, that TABLE is either a column or a row)"
-  (let ((check (if prop-val2
-                   (lambda (x) (= (cdr prop-val2)
-                                  (plist-get x (car prop-val2))))
-                 (lambda (x) t))))
+  (if prop-val2
+      (catch 'cell
+        (dolist (x table)
+          (when (and (= (cdr prop-val1) (plist-get x (car prop-val1)))
+                     (= (cdr prop-val2) (plist-get x (car prop-val2))))
+            (throw 'cell x)))
+        nil)
     (catch 'cell
       (dolist (x table)
-        (when (and (= (cdr prop-val1) (plist-get x (car prop-val1)))
-                   (funcall check x))
+        (when (= (cdr prop-val1) (plist-get x (car prop-val1)))
           (throw 'cell x)))
       nil)))
 
@@ -451,7 +453,7 @@ Precedence depends on the value of DIR (either \\='next\\=',
           (t
            (apply #'< rows)))))
 
-(cl-defun latex-table-wizard--get-extreme (dir table current-cell)
+(defun latex-table-wizard--get-extreme (dir table current-cell)
   "Return the last cell in a certain row or cell from TABLE.
 
 The goal is to get to the last cell in the same row or same
@@ -1210,9 +1212,15 @@ at point.  If it is none of those object, return nil."
 
 ;;; Aesthetics
 
+(defgroup latex-table-wizard-faces nil
+  "Faces used by latex-table-wizard."
+  :group 'latex-table-wizard
+  :group 'faces)
+
 (defface latex-table-wizard-background
   '((t (:foreground "gray40")))
-  "Face for hiding non-table buffer content.")
+  "Face for hiding non-table buffer content."
+  :group 'latex-table-wizard)
 
 (defun latex-table-wizard--hide-rest ()
   "Grey out parts of buffer outside of table at point."
@@ -1253,7 +1261,6 @@ Only remove them in current buffer."
 (advice-add #'latex-table-wizard-do :after #'latex-table-wizard--get-out)
 (advice-add #'latex-table-wizard-do :after #'latex-table-wizard--hide-rest)
 (advice-add #'transient-quit-one :before #'latex-table-wizard--cleanup)
-(add-hook 'before-save-hook #'latex-table-wizard--cleanup)
 
 (provide 'latex-table-wizard)
 
