@@ -813,7 +813,6 @@ THING is either \\='cell\\=', \\='column\\=' or \\='row\\='."
 
 ;;; Interactive functions
 
-;;;###autoload
 (defun latex-table-wizard-clean-whitespace ()
   "Remove excess whitespace from cell borders."
   (interactive)
@@ -827,7 +826,6 @@ THING is either \\='cell\\=', \\='column\\=' or \\='row\\='."
         (goto-char x)
         (just-one-space)))))
 
-;;;###autoload
 (defun latex-table-wizard-align ()
   "Align and format table at point.
 
@@ -862,7 +860,6 @@ delimiters."
                                        (string-to-char " ")))))))
           (setq count (1+ count)))))))
 
-;;;###autoload
 (defun latex-table-wizard-right (&optional n)
   "Move point N cells to the right.
 
@@ -875,7 +872,6 @@ leftmost cell of the row below where point is."
   (interactive "p")
   (latex-table-wizard--jump 'forward nil n))
 
-;;;###autoload
 (defun latex-table-wizard-left (&optional n)
   "Move point N cells to the left.
 
@@ -888,7 +884,6 @@ rightmost cell of the row above where point is."
   (interactive "p")
   (latex-table-wizard--jump 'backward nil n))
 
-;;;###autoload
 (defun latex-table-wizard-down (&optional n)
   "Move point N cells down.
 
@@ -901,7 +896,6 @@ the column to the right of where point is."
   (interactive "p")
   (latex-table-wizard--jump 'next nil n))
 
-;;;###autoload
 (defun latex-table-wizard-up (&optional n)
   "Move point N cells up.
 
@@ -914,45 +908,38 @@ of the column to the left of where point is."
   (interactive "p")
   (latex-table-wizard--jump 'previous nil n))
 
-;;;###autoload
 (defun latex-table-wizard-end-of-row ()
   "Move point to the rightmost cell in current row."
   (interactive)
   (latex-table-wizard--jump 'forward t))
 
-;;;###autoload
 (defun latex-table-wizard-beginning-of-row ()
   "Move point to the leftmost cell in current row."
   (interactive)
   (latex-table-wizard--jump 'backward t))
 
-;;;###autoload
 (defun latex-table-wizard-bottom ()
   "Move point to the bottom cell in current column."
   (interactive)
   (latex-table-wizard--jump 'next t))
 
-;;;###autoload
 (defun latex-table-wizard-top ()
   "Move point to the top cell in current column."
   (interactive)
   (latex-table-wizard--jump 'previous t))
 
-;;;###autoload
 (defun latex-table-wizard-end-of-cell ()
   "Move point to the end of the current cell."
   (interactive)
   (let ((cell (latex-table-wizard--get-thing 'cell)))
     (goto-char (plist-get cell :end))))
 
-;;;###autoload
 (defun latex-table-wizard-beginning-of-cell ()
   "Move point to the beginning of the current cell."
   (interactive)
   (let ((cell (latex-table-wizard--get-thing 'cell)))
     (goto-char (plist-get cell :start))))
 
-;;;###autoload
 (defun latex-table-wizard-mark-cell ()
   "Mark current cell.
 
@@ -964,55 +951,46 @@ TABLE is a list of cell plists.  If it is nil, evaluate
     (push-mark (plist-get cell :start) nil t)
     (goto-char (plist-get cell :end))))
 
-;;;###autoload
 (defun latex-table-wizard-swap-column-right ()
   "Swap current column and the one to the right."
   (interactive)
   (latex-table-wizard--swap-adjacent-line 'forward 'column))
 
-;;;###autoload
 (defun latex-table-wizard-swap-column-left ()
   "Swap current column and the one to the left."
   (interactive)
   (latex-table-wizard--swap-adjacent-line 'backward 'column))
 
-;;;###autoload
 (defun latex-table-wizard-swap-row-up ()
   "Swap current row and the one above."
   (interactive)
   (latex-table-wizard--swap-adjacent-line 'previous 'row))
 
-;;;###autoload
 (defun latex-table-wizard-swap-row-down ()
   "Swap current row and the one below."
   (interactive)
   (latex-table-wizard--swap-adjacent-line 'next 'row))
 
-;;;###autoload
 (defun latex-table-wizard-swap-cell-right ()
   "Swap content of current cell and the one to the right."
   (interactive)
   (latex-table-wizard--swap-adjacent-line 'forward 'cell))
 
-;;;###autoload
 (defun latex-table-wizard-swap-cell-left ()
   "Swap content of current cell and the one to the left."
   (interactive)
   (latex-table-wizard--swap-adjacent-line 'backward 'cell))
 
-;;;###autoload
 (defun latex-table-wizard-swap-cell-down ()
   "Swap content of current cell and the one below."
   (interactive)
   (latex-table-wizard--swap-adjacent-line 'next 'cell))
 
-;;;###autoload
 (defun latex-table-wizard-swap-cell-up ()
   "Swap content of current cell and the one above."
   (interactive)
   (latex-table-wizard--swap-adjacent-line 'previous 'cell))
 
-;;;###autoload
 (defun latex-table-wizard-insert-column ()
   "Insert empty column to the right of the one at point."
   (interactive)
@@ -1024,7 +1002,6 @@ TABLE is a list of cell plists.  If it is nil, evaluate
         (goto-char (plist-get x :end))
         (insert " " col-del " ")))))
 
-;;;###autoload
 (defun latex-table-wizard-kill-column ()
   "Kill content of column at point."
   (interactive)
@@ -1042,7 +1019,6 @@ TABLE is a list of cell plists.  If it is nil, evaluate
       (kill-new (latex-table-wizard--disjoin
                  (nreverse kills) "\n")))))
 
-;;;###autoload
 (defun latex-table-wizard-insert-row ()
   "Insert empty row below the one at point."
   (interactive)
@@ -1067,7 +1043,6 @@ TABLE is a list of cell plists.  If it is nil, evaluate
           (insert " " col-del))
         (insert " " row-del "\n")))))
 
-;;;###autoload
 (defun latex-table-wizard-kill-row ()
   "Kill row at point."
   (interactive)
@@ -1077,19 +1052,16 @@ TABLE is a list of cell plists.  If it is nil, evaluate
                  (latex-table-wizard--get-thing 'row table))))
       (kill-region (car b-e) (cdr b-e)))))
 
-;;;###autoload
 (defun latex-table-wizard-select-cell ()
   "Add cell at point to selection for swapping."
   (interactive)
   (latex-table-wizard--select-thing 'cell))
 
-;;;###autoload
 (defun latex-table-wizard-select-row ()
   "Add row at point to selection for swapping."
   (interactive)
   (latex-table-wizard--select-thing 'row))
 
-;;;###autoload
 (defun latex-table-wizard-select-column ()
   "Add column at point to selection for swapping."
   (interactive)
@@ -1120,7 +1092,6 @@ TABLE is a list of cell plists.  If it is nil, evaluate
   (latex-table-wizard--remove-overlays)
   (setq latex-table-wizard--selection nil))
 
-;;;###autoload
 (defun latex-table-wizard-swap ()
   "Swap selection and thing at point.
 
@@ -1256,15 +1227,28 @@ Only remove them in current buffer."
                  (1-)
                  (goto-char))))
 
+(define-minor-mode latex-table-wizard-mode
+  "Minor mode for editing LaTeX table-like environemnts."
+  :init-value nil
+  :global nil
+  :lighter " ltw"
+  :group 'convenience
+  (if latex-table-wizard-mode
+      (progn
+        (add-hook 'before-save-hook #'latex-table-wizard--cleanup nil t)
+        (add-hook 'transient-exit-hook #'latex-table-wizard--cleanup nil t))
+    (remove-hook 'before-save-hook #'latex-table-wizard--cleanup t)
+    (remove-hook 'transient-exit-hook #'latex-table-wizard--cleanup t)))
+
 ;;;###autoload
 (defun latex-table-wizard-do ()
   "Edit table-like environment with a transient interface."
   (interactive)
+  (unless latex-table-wizard-mode
+    (latex-table-wizard-mode 1))
   (latex-table-wizard--get-out)
   (latex-table-wizard--hide-rest)
   (call-interactively #'latex-table-wizard-prefix))
-
-(advice-add #'transient-quit-one :before #'latex-table-wizard--cleanup)
 
 (provide 'latex-table-wizard)
 
