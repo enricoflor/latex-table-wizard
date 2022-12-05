@@ -230,8 +230,8 @@ So instead of ~\\ \\~ we will have ~\\ \blk{} \\~.
 * Customization
 ** Change keybindings
 To change the default keybindings, you need to provide a new
-definition of the transient prefix ~latex-table-wizard-do~ through the
-macro ~transient-define-prefix~.
+definition of the transient prefix ~latex-table-wizard-prefix~ through
+the macro ~transient-define-prefix~.
 
 The default definition, which is the one assumed in this readme so
 far, is below:
