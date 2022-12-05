@@ -236,7 +236,7 @@ If NAME is nil, skip any LaTeX macro that point is looking at."
         (match-end 0)))))
 
 (cl-defsubst latex-table-wizard--disjoin (str-list &optional sep)
-  "Concatenate strings in STR-LIST with separtor SEP.
+  "Concatenate strings in STR-LIST with separator SEP.
 
 If SEP is nil, the separator used is \"\\\\|\""
   (let ((separator (or sep "\\|")))
@@ -337,7 +337,7 @@ argument."
     `(,beg ,end ,end-of-row)))
 
 (cl-defsubst latex-table-wizard--get-env-ends (table)
-  "Given TABLE, return beginning and end of the environemnt.
+  "Given TABLE, return beginning and end of the environment.
 
 TABLE is a list of cell plists.  The return type is a cons
 cell (B . E) with B and E being markers."
@@ -1228,7 +1228,7 @@ Only remove them in current buffer."
                  (goto-char))))
 
 (define-minor-mode latex-table-wizard-mode
-  "Minor mode for editing LaTeX table-like environemnts."
+  "Minor mode for editing LaTeX table-like environments."
   :init-value nil
   :global nil
   :lighter " ltw"

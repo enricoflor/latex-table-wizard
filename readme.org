@@ -7,6 +7,8 @@
 #+MACRO: version 0.1.0
 #+MACRO: updated last updated 14 November 2022
 
+    [[https://melpa.org/#/latex-table-wizard][file:https://melpa.org/packages/latex-table-wizard-badge.svg]]
+
 Copyright (C) 2022 Enrico Flor.
 
      Permission is granted to copy, distribute and/or modify this
@@ -49,7 +51,13 @@ as to how to specify additional syntaxes).
 Whenever we say "current" we mean "at point".
 
 ** Start editing
-Just call ~latex-table-wizard-do~ when point is inside of table-like environment.
+Just call ~latex-table-wizard-do~ when point is inside of table-like
+environment.
+
+This commands actually activates the non-global minor mode
+~latex-table-wizard-mode~.  If you intend to use this package's commands
+without the transient interface brought up by ~latex-table-wizard-do~,
+activate this minor mode to have the interactive functions loaded.
 ** Relative motion commands
 
 These commands move point N cells to the right, left, down, and up.  N
@@ -200,7 +208,25 @@ delimiters embedded in a cell.
 | ~latex-table-wizard-clean-whitespace~ | ~w~           |
 | ~latex-table-wizard-align~            | ~TAB~         |
 
+* Known issues
 
+** Empty cells in single-column tables
+This package handles empty cells (that is, cells without any text in
+them except perhaps comments) well.  The only exception is in tables
+with a single column.  The problem is that a buffer substring like
+~\\ \\~ is not parsed as a cell. This is normally not a problem, but if
+the table has only one column then that substring could be meant to be
+an empty or blank cell.
+
+A way to avoid this problem may be defining a LaTeX macro that does
+nothing, and use it in the cell you intend to be empty so that the
+parser sees some text.
+
+#+begin_src latex
+\newcommand{\blk}{}
+#+end_src
+
+So instead of ~\\ \\~ we will have ~\\ \blk{} \\~.
 * Customization
 ** Change keybindings
 To change the default keybindings, you need to provide a new
