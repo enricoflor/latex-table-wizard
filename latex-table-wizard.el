@@ -5,7 +5,7 @@
 ;; Author: Enrico Flor <enrico@eflor.net>
 ;; Maintainer: Enrico Flor <enrico@eflor.net>
 ;; URL: https://github.com/enricoflor/latex-table-wizard
-;; Version: 0.2.0
+;; Version: 0.2.1
 
 ;; Package-Requires: ((emacs "27.1") (auctex "12.1") (transient "0.3.7"))
 
@@ -361,7 +361,19 @@ cell (B . E) with B and E being markers."
     .
     ,(apply #'max (mapcar (lambda (x) (plist-get x :end)) table))))
 
-(defvar-local latex-table-wizard--parsed-table-delims nil)
+(defvar-local latex-table-wizard--parse nil
+  "Data from a parsed table environment.
+
+The value of this variable is a list of the form
+
+    ((B . E) H P)
+
+where B and E are buffer positions or markers, H is a hash string
+and P is a list of plists (that is, of cell objects).
+
+B and E are the beginning and end of a tabular environment, H is
+the sha256 of the corresponding buffer substring and P is the
+parse of the the environment.")
 
 (defun latex-table-wizard--parse-table ()
   "Parse table(-like) environment point is in.
@@ -389,44 +401,49 @@ Each value is an integer, S and E are markers."
                                         nil t)
                     (forward-char -1)
                     (point-marker)))
+         (hash (secure-hash 'sha256
+                            (buffer-substring-no-properties env-beg env-end)))
          (col-re
           (latex-table-wizard--disjoin
            latex-table-wizard--current-col-delims))
          (row-re (latex-table-wizard--disjoin
                   latex-table-wizard--current-row-delims)))
-    (save-excursion
-      (goto-char env-beg)
-      ;; we need to make some space between the end of of the \begin
-      ;; macro and the start of the (0,0) cell
-      (if (looking-at-p "[[:space:]]")
-          (forward-char 1)
-        (insert " "))
-      (while (< (point) env-end)
-        (when (looking-at-p "[[:space:]]*\\($\\|%\\)")
-          ;; nothing interesting left between point and eol
-          (forward-line))
-        (let ((data (latex-table-wizard--get-cell-boundaries
-                     col-re row-re env-end)))
-          (push `( :column ,col
-                   :row ,row
-                   :start ,(nth 0 data)
-                   :end ,(if (nth 1 data) (nth 1 data) env-end))
-                cells-list)
-          (if (nth 2 data)         ; this was the last cell in the row
-              (setq row (1+ row)
-                    col 0)
-            (setq col (1+ col)))
-          ;; if we just hit the end of a row and the next thing coming
-          ;; is another row delimiter, skip that one (because you are
-          ;; not in a cell)
-          (while (and (nth 2 data)
-                      (save-excursion
-                        (skip-syntax-forward " ")
-                        (looking-at-p row-re)))
-            (re-search-forward row-re nil t)))))
-    (setq latex-table-wizard--parsed-table-delims
-          `(,env-beg . ,env-end))
-    cells-list))
+    (if (and (equal `(,env-beg . ,env-end) (nth 0 latex-table-wizard--parse))
+             (equal hash (nth 1 latex-table-wizard--parse)))
+        (nth 2 latex-table-wizard--parse)
+      (save-excursion
+        (goto-char env-beg)
+        ;; we need to make some space between the end of of the \begin
+        ;; macro and the start of the (0,0) cell
+        (if (looking-at-p "[[:space:]]")
+            (forward-char 1)
+          (insert " "))
+        (while (< (point) env-end)
+          (when (looking-at-p "[[:space:]]*\\($\\|%\\)")
+            ;; nothing interesting left between point and eol
+            (forward-line))
+          (let ((data (latex-table-wizard--get-cell-boundaries
+                       col-re row-re env-end)))
+            (push `( :column ,col
+                     :row ,row
+                     :start ,(nth 0 data)
+                     :end ,(if (nth 1 data) (nth 1 data) env-end))
+                  cells-list)
+            (if (nth 2 data)         ; this was the last cell in the row
+                (setq row (1+ row)
+                      col 0)
+              (setq col (1+ col)))
+            ;; if we just hit the end of a row and the next thing coming
+            ;; is another row delimiter, skip that one (because you are
+            ;; not in a cell)
+            (while (and (nth 2 data)
+                        (save-excursion
+                          (skip-syntax-forward " ")
+                          (looking-at-p row-re)))
+              (re-search-forward row-re nil t)))))
+      (setq latex-table-wizard--parse
+            `((,env-beg . ,env-end) ,hash ,cells-list))
+      cells-list)))
 
 (defun latex-table-wizard--get-cell-pos (table prop-val1
                                                &optional prop-val2)
@@ -1201,8 +1218,8 @@ at point.  If it is none of those object, return nil."
 (defun latex-table-wizard--hide-rest ()
   "Grey out parts of buffer outside of table at point."
   (latex-table-wizard--parse-table)
-  (let* ((tab-b (car latex-table-wizard--parsed-table-delims))
-         (tab-e (cdr latex-table-wizard--parsed-table-delims))
+  (let* ((tab-b (car (car latex-table-wizard--parse)))
+         (tab-e (cdr (car latex-table-wizard--parse)))
          (ols `(,(make-overlay (point-min) tab-b)
                 ,(make-overlay tab-e (point-max)))))
     (dolist (x ols)
@@ -1214,7 +1231,7 @@ at point.  If it is none of those object, return nil."
 
 Only remove them in current buffer."
   (setq latex-table-wizard--selection nil)
-  (when-let ((lims latex-table-wizard--parsed-table-delims))
+  (when-let ((lims (car latex-table-wizard--parse)))
     (remove-overlays (point-min) (point-max) 'tabl-inside-ol t)
     (remove-overlays (point-min) (point-max) 'tabl-outside-ol t)))
 
