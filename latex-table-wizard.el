@@ -5,7 +5,7 @@
 ;; Author: Enrico Flor <enrico@eflor.net>
 ;; Maintainer: Enrico Flor <enrico@eflor.net>
 ;; URL: https://github.com/enricoflor/latex-table-wizard
-;; Version: 0.1.0
+;; Version: 0.2.0
 
 ;; Package-Requires: ((emacs "27.1") (auctex "12.1") (transient "0.3.7"))
 
@@ -99,7 +99,12 @@
 (eval-when-compile (require 'subr-x))
 (require 'transient)
 
-;;; Regular expressions
+(defgroup latex-table-wizard nil
+  "LaTeX table wizard configuration options."
+  :prefix "latex-table-wizard"
+  :group 'convenience)
+
+;;; Regular expressions and configuration options
 
 (defconst latex-table-wizard--macro-args-re
   (rx (seq (zero-or-more                    ; obligatory arguments
@@ -118,52 +123,30 @@
 
 Capture group 1 matches the name of the macro.")
 
-(defconst latex-table-wizard-column-delimiters '("&")
-  "List of strings that are column delimiters if unescaped.")
+(defcustom latex-table-wizard-column-delimiters '("&")
+  "List of strings that are column delimiters if unescaped."
+  :type '(repeat string)
+  :group 'latex-table-wizard)
 
-(defconst latex-table-wizard-row-delimiters '("\\\\\\\\")
-  "List of strings that are row delimiters if unescaped.")
+(defcustom latex-table-wizard-row-delimiters '("\\\\\\\\")
+  "List of strings that are row delimiters if unescaped."
+  :type '(repeat string)
+  :group 'latex-table-wizard)
 
-(defvar latex-table-wizard-hline-macros '("cline"
-                                          "vline"
-                                          "midrule"
-                                          "hline"
-                                          "toprule"
-                                          "bottomrule")
+(defcustom latex-table-wizard-hline-macros '("cline"
+                                             "vline"
+                                             "midrule"
+                                             "hline"
+                                             "toprule"
+                                             "bottomrule")
   "Name of macros that draw horizontal lines.
 
 Each member of this list is a string that would be between the
-\"\\\" and the arguments.")
+\"\\\" and the arguments."
+  :type '(repeat string)
+  :group 'latex-table-wizard)
 
-(defmacro latex-table-wizard--or (symbol &rest values)
-  "Return non-nil if SYMBOL is `eq' to one of VALUES."
-  (let ((bools (mapcar (lambda (value) `(eq ,symbol ,value))
-                       values)))
-    `(or ,@bools)))
-
-(defun latex-table-wizard--unescaped-p (&optional position)
-  "Return t if LaTeX macro starting at POSITION is not escaped.
-
-If POSITION is nil, use the value of `point'.
-
-A macro is escaped if it is preceded by a single \\='\\\\='."
-  (let ((p (or position (point))))
-    (save-excursion
-      (goto-char p)
-      (save-match-data
-        (looking-back "\\\\*" (line-beginning-position) t)
-        (let ((matched (buffer-substring-no-properties
-                        (match-beginning 0)
-                        (match-end 0))))
-          (when (eq (logand (length matched) 1) 0) t))))))
-
-;; Every time latex-table-wizard--parse-table is evaluated, the values
-;; of the variables below is set:
-(defvar latex-table-wizard--current-col-delims nil)
-(defvar latex-table-wizard--current-row-delims nil)
-(defvar latex-table-wizard--current-hline-macros nil)
-
-(defvar latex-table-wizard-new-environments-alist nil
+(defcustom latex-table-wizard-new-environments-alist nil
   "Alist mapping environment names to property lists.
 
 The environment name is a string, for example \"foo\" for an
@@ -182,35 +165,64 @@ The cdr of each mapping is a property list with three keys:
 The values for :col and :row are two lists of strings.
 
 The value for :lines is a list of strings just like is the case
-for `latex-table-wizard-hline-macros'.")
+for `latex-table-wizard-hline-macros', each of which is the name
+of a macro that inserts some horizontal line.  For a macro
+\"\\foo{}\", use string \"foo\"."
+  :type '(alist :key-type (string :tag "Name of the environment:")
+                :value-type (plist :key-type symbol
+                                   :options (:col :row :lines)
+                                   :value-type (repeat string)))
+
+  :group 'latex-table-wizard)
+
+(defmacro latex-table-wizard--or (symbol &rest values)
+  "Return non-nil if SYMBOL is `eq' to one of VALUES."
+  (let ((bools (mapcar (lambda (value) `(eq ,symbol ,value))
+                       values)))
+    `(or ,@bools)))
+
+(defun latex-table-wizard--unescaped-p (&optional position)
+  "Return t if LaTeX macro starting at POSITION is not escaped.
+
+If POSITION is nil, use the value of `point'.
+
+A macro is escaped if it is preceded by a single \\='\\\\='."
+  (let ((p (or position (point))))
+    (save-excursion
+      (goto-char p)
+      (save-match-data
+        (looking-back "\\\\*" (line-beginning-position) t)
+        (let ((len (length (match-string-no-properties 0))))
+          (when (eq (logand len 1) 0) t))))))
+
+;; Every time latex-table-wizard--parse-table is evaluated, the values
+;; of the variables below is set:
+(defvar latex-table-wizard--current-col-delims nil)
+(defvar latex-table-wizard--current-row-delims nil)
+(defvar latex-table-wizard--current-hline-macros nil)
 
 (defun latex-table-wizard--set-current-values ()
   "Set temporary values that specify the syntax of the environment.
 
 If the current environment is one that is mapped to something in
 `latex-table-wizard-new-environments', set the values accordingly."
-  (if-let ((vals (cdr (assoc (LaTeX-current-environment)
-                             latex-table-wizard-new-environments-alist))))
+  (let* ((values (cdr (assoc (LaTeX-current-environment)
+                             latex-table-wizard-new-environments-alist)))
+         (col (plist-get values :col))
+         (row (plist-get values :row))
+         (lines (plist-get values :lines)))
+    (if col
+        (setq latex-table-wizard--current-col-delims col)
       (setq latex-table-wizard--current-col-delims
-            (plist-get (cdr (assoc (LaTeX-current-environment)
-                                   latex-table-wizard-new-environments-alist))
-                       :col)
-
-            latex-table-wizard--current-row-delims
-            (plist-get (cdr (assoc (LaTeX-current-environment)
-                                   latex-table-wizard-new-environments-alist))
-                       :row)
-
-            latex-table-wizard--current-hline-macros
-            (plist-get (cdr (assoc (LaTeX-current-environment)
-                                   latex-table-wizard-new-environments-alist))
-                       :lines))
-    (setq latex-table-wizard--current-col-delims
-          latex-table-wizard-column-delimiters
-          latex-table-wizard--current-row-delims
-          latex-table-wizard-row-delimiters
-          latex-table-wizard--current-hline-macros
-          latex-table-wizard-hline-macros)))
+            latex-table-wizard-column-delimiters))
+    (if row
+        (setq latex-table-wizard--current-row-delims row)
+      (setq latex-table-wizard--current-row-delims
+            latex-table-wizard-row-delimiters))
+    (if lines
+        (setq latex-table-wizard--current-hline-macros lines)
+      (setq  latex-table-wizard--current-hline-macros
+             latex-table-wizard-hline-macros))))
 
 
 
@@ -1243,6 +1255,11 @@ Only remove them in current buffer."
   (latex-table-wizard--get-out)
   (latex-table-wizard--hide-rest)
   (call-interactively #'latex-table-wizard-prefix))
+
+(defun latex-table-wizard-customize ()
+  "Call the customize function with latex-table-wizard as argument."
+  (interactive)
+  (customize-browse 'latex-table-wizard))
 
 (provide 'latex-table-wizard)
 

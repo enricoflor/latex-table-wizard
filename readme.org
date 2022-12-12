@@ -310,16 +310,57 @@ cells if you want to change the layout of the transient interface.
 Remember the default values used for parsing table environments:
 
 #+begin_src emacs-lisp
-(defconst latex-table-wizard-column-delimiters '("&")
-  "List of strings that are column delimiters if unescaped.")
+(defcustom latex-table-wizard-column-delimiters '("&")
+  "List of strings that are column delimiters if unescaped."
+  :type '(repeat string)
+  :group 'latex-table-wizard)
 
-(defconst latex-table-wizard-row-delimiters '("\\\\\\\\")
-  "List of strings that are row delimiters if unescaped.")
+(defcustom latex-table-wizard-row-delimiters '("\\\\\\\\")
+  "List of strings that are row delimiters if unescaped."
+  :type '(repeat string)
+  :group 'latex-table-wizard)
 
-(defvar latex-table-wizard-hline-macros '("hline"
-                                          "midrule"
-                                          "toprule"
-                                          "bottomrule"))
+(defcustom latex-table-wizard-hline-macros '("cline"
+                                             "vline"
+                                             "midrule"
+                                             "hline"
+                                             "toprule"
+                                             "bottomrule")
+  "Name of macros that draw horizontal lines.
+
+Each member of this list is a string that would be between the
+\"\\\" and the arguments."
+  :type '(repeat string)
+  :group 'latex-table-wizard)
+
+(defcustom latex-table-wizard-new-environments-alist nil
+  "Alist mapping environment names to property lists.
+
+The environment name is a string, for example \"foo\" for an
+environment like
+
+  \\begin{foo}
+      ...
+  \\end{foo}
+
+The cdr of each mapping is a property list with three keys:
+
+   :col
+   :row
+   :lines
+
+The values for :col and :row are two lists of strings.
+
+The value for :lines is a list of strings just like is the case
+for `latex-table-wizard-hline-macros', each of which is the name
+of a macro that inserts some horizontal line.  For a macro
+\"\\foo{}\", use string \"foo\"."
+  :type '(alist :key-type (string :tag "Name of the environment:")
+                :value-type (plist :key-type symbol
+                                   :options (:col :row :lines)
+                                   :value-type (repeat string)))
+
+  :group 'latex-table-wizard)
 #+end_src
 
  LaTeX-table-wizard will always presume the table you want operate on
@@ -340,3 +381,7 @@ Remember the default values used for parsing table environments:
 (add-to-list 'latex-table-wizard-new-environments-alist
              '("mytable" . (:col ("!COL") :row ("!ROW") :lines ("horizontal"))))
  #+end_src
+
+ A more convenient way to customize these variables is through the
+ ~customize~ interface, which is easily accessed through the interactive
+ command ~latex-table-wizard-customize~.
