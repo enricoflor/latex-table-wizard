@@ -836,20 +836,7 @@ Don't print any message if NO-MESSAGE is non-nil."
 
 ;;; Interactive functions
 
-(defun latex-table-wizard-clean-whitespace ()
-  "Remove excess whitespace from cell borders."
-  (interactive)
-  (save-excursion
-    (let* ((table (latex-table-wizard--parse-table))
-           (extrs (latex-table-wizard--get-env-ends table)))
-      (whitespace-cleanup-region (car extrs) (cdr extrs))
-      (dolist (x (flatten-list (mapcar (lambda (x) `(,(plist-get x :start)
-                                                     ,(plist-get x :end)))
-                                       table)))
-        (goto-char x)
-        (just-one-space)))))
-
-(defvar-local latex-table-wizard--align-status '(left center right))
+(defvar latex-table-wizard--align-status '(left center right compress))
 
 (defun latex-table-wizard-align ()
   "Align and format table at point.
@@ -858,20 +845,33 @@ Have every row start on its own line and vertically align column
 delimiters.
 
 Cycle through three modes of alignment for the text in the cells:
-align left, center and right."
+align left, center, right and no alignment (minimize space at
+cell borders)."
   (interactive)
-  (let ((mode (car latex-table-wizard--align-status))
+  (let ((message-log-max 0)
+        (mode (car latex-table-wizard--align-status))
         (max-col (thread-last (latex-table-wizard--parse-table)
                               (mapcar (lambda (x) (plist-get x :column)))
                               (delete-dups)
                               (apply #'max))))
+    (setq latex-table-wizard--align-status
+          (append (cdr latex-table-wizard--align-status)
+                  (list (car latex-table-wizard--align-status))))
     (save-excursion
       (dolist (x (seq-filter (lambda (x) (= 0 (plist-get x :column)))
                              (latex-table-wizard--parse-table)))
         (goto-char (plist-get x :start))
         (unless (looking-back "^[[:space:]]*" (line-beginning-position))
-          (insert "\n")))
-      (latex-table-wizard-clean-whitespace)
+          (insert "\n"))))
+    (whitespace-cleanup-region (caar latex-table-wizard--parse)
+                               (cdar latex-table-wizard--parse))
+    (dolist (x (flatten-list (mapcar (lambda (x) `(,(plist-get x :start)
+                                                   ,(plist-get x :end)))
+                                     (latex-table-wizard--parse-table))))
+      (goto-char x)
+      (just-one-space))
+    (if (eq mode 'compress)
+        (message "Table compressed")
       (let ((count 0))
         (while (<= count max-col)
           (let ((line (seq-filter (lambda (x) (= count (plist-get x :column)))
@@ -889,21 +889,21 @@ align left, center and right."
                          (post (- tot pre)))
                     (cond ((eq mode 'left)
                            (insert (make-string tot
-                                                (string-to-char " "))))
+                                                (string-to-char " ")))
+                           (message "Table content aligned left"))
                           ((eq mode 'right)
                            (goto-char (plist-get cell :start))
                            (insert (make-string tot
-                                                (string-to-char " "))))
+                                                (string-to-char " ")))
+                           (message "Table content aligned right"))
                           ((eq mode 'center)
                            (insert (make-string post
                                                 (string-to-char " ")))
                            (goto-char (plist-get cell :start))
                            (insert (make-string pre
-                                                (string-to-char " "))))))))))
-          (setq count (1+ count)))))
-    (setq latex-table-wizard--align-status
-          (append (cdr latex-table-wizard--align-status)
-                  (list (car latex-table-wizard--align-status))))))
+                                                (string-to-char " ")))
+                           (message "Table content centered"))))))))
+          (setq count (1+ count)))))))
 
 (defun latex-table-wizard-right (&optional n)
   "Move point N cells to the right.
@@ -1170,9 +1170,7 @@ at point.  If it is none of those object, return nil."
 (transient-define-prefix latex-table-wizard-prefix ()
   [:description
    "      LaTeX table wizard"
-   ["Motion"
-    ;; latex-table-wizard--motion-suffixes
-    ("f" "move right" latex-table-wizard-right :transient t)
+   [("f" "move right" latex-table-wizard-right :transient t)
     ("b" "move left" latex-table-wizard-left :transient t)
     ("p" "move down" latex-table-wizard-up :transient t)
     ("n" "move up" latex-table-wizard-down :transient t)
@@ -1184,30 +1182,23 @@ at point.  If it is none of those object, return nil."
     ""
     ("a" "beginning of cell" latex-table-wizard-beginning-of-cell :transient t)
     ("e" "end of cell" latex-table-wizard-end-of-cell :transient t)
-    ""
-    ("u" "universal argument" universal-argument :transient t)]
-   ["Swap"
-    ;; latex-table-wizard--swap-cell-suffixes
-    ("C-f" "swap cell right" latex-table-wizard-swap-cell-right :transient t)
+    ("m c" "mark cell" latex-table-wizard-mark-cell :transient t)
+    ("x" "exchange point and mark" exchange-point-and-mark :transient t)]
+   [("C-f" "swap cell right" latex-table-wizard-swap-cell-right :transient t)
     ("C-b" "swap cell left" latex-table-wizard-swap-cell-left :transient t)
     ("C-p" "swap cell up" latex-table-wizard-swap-cell-up :transient t)
     ("C-n" "swap cell down" latex-table-wizard-swap-cell-down :transient t)
     ""
-    ;; latex-table-wizard--swap-line-suffixes
     ("M-f" "swap column right" latex-table-wizard-swap-column-right :transient t)
     ("M-b" "swap column left" latex-table-wizard-swap-column-left :transient t)
     ("M-p" "swap row up" latex-table-wizard-swap-row-up :transient t)
     ("M-n" "swap row down" latex-table-wizard-swap-row-down :transient t)
     ""
-    "Other"
-    ;; latex-table-wizard--other-suffixes
-    ("w" "compress table" latex-table-wizard-clean-whitespace :transient t)
-    ("TAB" "align table" latex-table-wizard-align :transient t)
+    ("TAB" "cycle alignment" latex-table-wizard-align :transient t)
     ("/" "undo" undo :transient t)
-    ""
+    ("u" "universal argument" universal-argument :transient t)
     ("RET" "done" transient-quit-one)]
-   ["Select and swap"
-    ("SPC" "select cell" latex-table-wizard-select-cell :transient t)
+   [("SPC" "select cell" latex-table-wizard-select-cell :transient t)
     ("c" "select column" latex-table-wizard-select-column :transient t)
     ("r" "select row" latex-table-wizard-select-row :transient t)
     ("d SPC" "deselect cell" latex-table-wizard-deselect-cell :transient t)
@@ -1216,10 +1207,6 @@ at point.  If it is none of those object, return nil."
     ""
     ("s" "swap selection" latex-table-wizard-swap :transient t)
     ""
-    "Mark, kill and insert"
-    ;; latex-table-wizard--mark-suffixes
-    ("x" "exchange point and mark" exchange-point-and-mark :transient t)
-    ("m c" "mark cell" latex-table-wizard-mark-cell :transient t)
     ("i c" "insert column right" latex-table-wizard-insert-column :transient t)
     ("i r" "insert row below" latex-table-wizard-insert-row :transient t)
     ("k c" "kill current column" latex-table-wizard-kill-column :transient t)
