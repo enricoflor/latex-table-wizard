@@ -708,7 +708,8 @@ If SAME-LINE is non-nil, never leave current column or row."
            (goto-char (nth 1 macro-at-point)))
           ((string-prefix-p "\\end" (nth 0 macro-at-point))
            (goto-char (nth 2 macro-at-point)))))
-  (let* ((cells (latex-table-wizard--parse-table))
+  (let* ((message-log-max 0)
+         (cells (latex-table-wizard--parse-table))
          (curr (latex-table-wizard--get-thing 'cell cells))
          (target (if (not absolute)
                      (latex-table-wizard--get-other-cell
@@ -720,7 +721,10 @@ If SAME-LINE is non-nil, never leave current column or row."
     (latex-table-wizard--remove-overlays cells)
     (goto-char (plist-get target :start))
     (latex-table-wizard--hl-cells `(,target))
-    (latex-table-wizard--hl-cells latex-table-wizard--selection)))
+    (latex-table-wizard--hl-cells latex-table-wizard--selection)
+    (message "Col X Row (%d,%d)"
+             (plist-get target :column)
+             (plist-get target :row))))
 
 
 
