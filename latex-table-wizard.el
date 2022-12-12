@@ -5,7 +5,7 @@
 ;; Author: Enrico Flor <enrico@eflor.net>
 ;; Maintainer: Enrico Flor <enrico@eflor.net>
 ;; URL: https://github.com/enricoflor/latex-table-wizard
-;; Version: 0.2.1
+;; Version: 0.3.0
 
 ;; Package-Requires: ((emacs "27.1") (auctex "12.1") (transient "0.3.7"))
 
@@ -403,9 +403,8 @@ Each value is an integer, S and E are markers."
                     (point-marker)))
          (hash (secure-hash 'sha256
                             (buffer-substring-no-properties env-beg env-end)))
-         (col-re
-          (latex-table-wizard--disjoin
-           latex-table-wizard--current-col-delims))
+         (col-re (latex-table-wizard--disjoin
+                  latex-table-wizard--current-col-delims))
          (row-re (latex-table-wizard--disjoin
                   latex-table-wizard--current-row-delims)))
     (if (and (equal `(,env-beg . ,env-end) (nth 0 latex-table-wizard--parse))
@@ -850,13 +849,19 @@ Don't print any message if NO-MESSAGE is non-nil."
         (goto-char x)
         (just-one-space)))))
 
+(defvar-local latex-table-wizard--align-status '(left center right))
+
 (defun latex-table-wizard-align ()
   "Align and format table at point.
 
 Have every row start on its own line and vertically align column
-delimiters."
+delimiters.
+
+Cycle through three modes of alignment for the text in the cells:
+align left, center and right."
   (interactive)
-  (let ((max-col (thread-last (latex-table-wizard--parse-table)
+  (let ((mode (car latex-table-wizard--align-status))
+        (max-col (thread-last (latex-table-wizard--parse-table)
                               (mapcar (lambda (x) (plist-get x :column)))
                               (delete-dups)
                               (apply #'max))))
@@ -879,9 +884,26 @@ delimiters."
               (dolist (cell line)
                 (goto-char (plist-get cell :end))
                 (when (< (current-column) longest)
-                  (insert (make-string (- longest (current-column))
-                                       (string-to-char " ")))))))
-          (setq count (1+ count)))))))
+                  (let* ((tot (- longest (current-column)))
+                         (pre (/ tot 2))
+                         (post (- tot pre)))
+                    (cond ((eq mode 'left)
+                           (insert (make-string tot
+                                                (string-to-char " "))))
+                          ((eq mode 'right)
+                           (goto-char (plist-get cell :start))
+                           (insert (make-string tot
+                                                (string-to-char " "))))
+                          ((eq mode 'center)
+                           (insert (make-string post
+                                                (string-to-char " ")))
+                           (goto-char (plist-get cell :start))
+                           (insert (make-string pre
+                                                (string-to-char " "))))))))))
+          (setq count (1+ count)))))
+    (setq latex-table-wizard--align-status
+          (append (cdr latex-table-wizard--align-status)
+                  (list (car latex-table-wizard--align-status))))))
 
 (defun latex-table-wizard-right (&optional n)
   "Move point N cells to the right.

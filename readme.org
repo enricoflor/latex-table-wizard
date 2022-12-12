@@ -199,8 +199,10 @@ table by removing excess white space at the edges of each cell, call
 ~latex-table-wizard-clean-whitespace~.
 
 Call ~latex-table-wizard-align~ if you want the columns to be vertically
-aligned too (and each row starting on its own line).  This alignment
-command tries to be smart and not be fooled by column or row
+aligned too (and each row starting on its own line).  If you call this
+command repeatedly, it will cycle through three modes of alignment of
+the text in the cells: align text left, center, and right.  This
+alignment command tries to be smart and not be fooled by column or row
 delimiters embedded in a cell.
 
 | Command                             | Default key |
