@@ -1396,7 +1396,7 @@ all defined faces."
   :group 'latex-table-wizard)
 
 (defun latex-table-wizard--hide-rest ()
-  "Apply foreground on parts of buffer outside of table at point."
+  "Apply face `latex-table-wizard-background' outside of table."
   (latex-table-wizard--parse-table)
   (let* ((tab-b (car (car latex-table-wizard--parse)))
          (tab-e (cdr (car latex-table-wizard--parse)))
