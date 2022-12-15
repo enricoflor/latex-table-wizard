@@ -4,8 +4,8 @@
 #+EMAIL: enrico@eflor.net
 
 #+OPTIONS: ':t toc:t author:t email:t
-#+MACRO: version 0.1.0
-#+MACRO: updated last updated 14 November 2022
+#+MACRO: version 1.0.0
+#+MACRO: updated last updated 14 December 2022
 
     [[https://melpa.org/#/latex-table-wizard][file:https://melpa.org/packages/latex-table-wizard-badge.svg]]
 
@@ -21,42 +21,69 @@ Copyright (C) 2022 Enrico Flor.
 
      (a) The FSF’s Back-Cover Text is: “You have the freedom to copy and
      modify this GNU manual.”
-* Overview
+* Introduction
 
 One of org-mode's magic features is its table editing capabilities.
-The goal of this package is to replicate that luxury for LaTeX
+The goal of this package is to replicate that magic for LaTeX
 table(-like) environments.
 
-LaTeX-table-wizard's UI is based on [[https://elpa.gnu.org/packages/transient.html][transient]].  While the user can
-change all the bindings, and can use all the commands without the
-transient interface, this readme will refer to the commands through
-the default bindings as they can be seen in the transient below.
+The way this is done is through a series of interactive commands that
+are exposed as *transient suffixes* through the transient interface
+invoked by the command ~latex-table-wizard~.  What this means is that
+by calling ~latex-table-wizard~ when point is in a table-like
+environment, you will be presented with a choice of keys that are
+bound to all the commands provided by this package.
 
-The transient interface is invoked through the ~latex-table-wizard-do~
-command, and exited, as usual, with ~C-g~.
+All these commands can of course be called through
+~execute-extended-command~, and you can bind any key you want to them.
+See [[#custom-transient-prefix]] for how to change the default bindings
+offered by the transient prefix.
 
-An important feature of LaTeX-table-wizard is that it tries to be
-smart: for instance, it should not be fooled if the current table-like
-environments contains embedded tables (that is, other tabular
-environments inside of its cells).  The table is parsed so that these
-big cells are treated like any other cell.
+An important feature of LaTeX-table-wizard is that it *tries to be
+smart*: for instance, it should not be fooled if the current
+table-like environments contains *embedded tables* (that is, other
+tabular environments inside of its cells).  The table is parsed so
+that these big cells are treated like any other cell.
 
-[[./wizard-01.gif]]
+For example, if you call ~latex-table-wizard~ when point is outside of
+the embedded ~tabular~ environment, LaTeX-table-wizard will behave as if
+it was in any other 3x3 table, and the embedded table will be treated
+just as any other cell content.
+
+#+begin_src LaTeX
+\begin{tabular}{lll}
+  \begin{tabular}{ll}
+    a & b \\
+    c & d
+  \end{tabular}
+  & █B2 & C2 \\\hline
+ A1 & B1 & C1 \\
+ A0 & B0 \makecell{longer & nested cell} & C0
+\end{tabular}
+#+end_src
+
+Of course you can call ~latex-table-wizard~ with point inside of the
+embedded table, in which case any command you use will operate only on
+the embedded table.
+
+For most of this document we will assume the table-like environment
+has the standard LaTeX2e syntax, but you can define your own types of
+table-like environments (more on this [[#user-defined-envs][below]]).
 
 * Available commands
 For now, we will assume a standard LaTeX syntax for tabular
-environments, where ~&~ delimits columns and ~\\~ rows (see [[#user-defined-envs][below]] for info
-as to how to specify additional syntaxes).
+environments, where ~&~ delimits columns and ~\\~ rows (see [[#user-defined-envs][below]] for
+info as to how to specify additional environments).
 
 Whenever we say "current" we mean "at point".
 
 ** Start editing
-Just call ~latex-table-wizard-do~ when point is inside of table-like
+Just call ~latex-table-wizard~ when point is inside of table-like
 environment.
 
 This commands actually activates the non-global minor mode
 ~latex-table-wizard-mode~.  If you intend to use this package's commands
-without the transient interface brought up by ~latex-table-wizard-do~,
+without the transient interface brought up by ~latex-table-wizard~,
 activate this minor mode to have the interactive functions loaded.
 ** Relative motion commands
 
@@ -64,12 +91,12 @@ These commands move point N cells to the right, left, down, and up.  N
 is passed as a prefix argument, and if it's not passed, it defaults
 to 1.
 
-| Command                  | Default key |
-|--------------------------+-------------|
-| ~latex-table-wizard-right~ | ~f~           |
-| ~latex-table-wizard-left~  | ~b~           |
-| ~latex-table-wizard-down~  | ~n~           |
-| ~latex-table-wizard-up~    | ~p~           |
+| Command                    | Default key |
+|----------------------------+-------------|
+| ~latex-table-wizard-right~   | ~f~           |
+| ~latex-table-wizard-left~    | ~b~           |
+| ~latex-table-wizard-down~    | ~n~           |
+| ~latex-table-wizard-up~      | ~p~           |
 
 With just one of these you can get anywhere you want in the table:
 
@@ -90,6 +117,12 @@ suitable cell to move to:
 + Point on ~B0~, ~latex-table-wizard-up~ ⇒ point on ~A2~
 
 and so on.
+
+These four commands accept a positive integer passed as a prefix
+argument that determines how many steps (i.e. how many cells) the
+movement will consist of.  By default, you can pass this argument
+from the transient interface of ~latex-table-wizard~ with the key ~u~
+(bound to ~universal-argument~).
 ** Absolute motion commands
 
 | Command                              | Default key | Move to...                    |
@@ -128,7 +161,7 @@ opposite end of the current cell.  So for example:
 
 #+begin_src LaTeX
 \begin{tabular}{lll}
-  A0 & B0 & C0 \\\hline
+  A0 & B0    & C0 \\\hline
   A1 & B1 & C1 \\
   A2 & B2 & C2
 \end{tabular}
@@ -137,47 +170,58 @@ opposite end of the current cell.  So for example:
 This is because these commands try to Do What You Mean if there is no
 suitable cell to move to:
 
-+ Point on ~B0~, ~latex-table-wizard-swap-row-up~
+Point on ~C0~, ~latex-table-wizard-swap-cell-right~
   ⇒
 #+begin_src LaTeX
 \begin{tabular}{lll}
- A2  & B2  & C2  \\\hline
-  A1 & B1 & C1 \\
- A0  & B0  & C0
-\end{tabular}
-#+end_src
-+ Point on ~C2~, ~latex-table-wizard-swap-cell-right~
-  ⇒
-#+begin_src latex
-\begin{tabular}{lll}
- C0  & B0 & A0  \\\hline
+ C0 & B0    & A0 \\\hline
   A1 & B1 & C1 \\
   A2 & B2 & C2
 \end{tabular}
 #+end_src
 
+Point on ~B0~, ~latex-table-wizard-swap-row-up~
+  ⇒
+#+begin_src LaTeX
+\begin{tabular}{lll}
+ A2 & B2 & C2 \\\hline
+  A1 & B1 & C1 \\
+ A0 & B0 & C0
+\end{tabular}
+#+end_src
+
+Point on ~A1~, ~latex-table-wizard-swap-column-right~
+  ⇒
+#+begin_src LaTeX
+\begin{tabular}{lll}
+ B0 & A0 & C0 \\\hline
+ B1 & A1 & C1 \\
+ B2 & A2 & C2
+\end{tabular}
+#+end_src
+
 ** Swap arbitrary fields
-To swap arbitrary fields one must first *select* something and then
-move point somewhere else and perform the swap.  Importantly,
-*selecting does not mean marking*: the mark is not even moved when
-selecting.
+To swap arbitrary fields one must first *select* something and then move
+point somewhere else and perform the swap.  Importantly, *selecting
+does not mean marking*: the mark is not even moved when selecting
+(however, by default the selected cell will receive the same kind of
+highlighting the loaded theme defines for the active region, but this
+is a purely graphical equivalence).  "Selecting", for the purposes of
+LaTeX-table-wizard only means storing a cell, a line or a row to be
+swapped with another.
 
 The simplest case is one in which the current cell, column or row are
 selected:
 
-| Command                          | Default key | Select current... |
-|----------------------------------+-------------+-------------------|
-| ~latex-table-wizard-select-cell~   | ~SPC~         | cell              |
-| ~latex-table-wizard-select-column~ | ~c~           | column            |
-| ~latex-table-wizard-select-row~    | ~r~           | row               |
+| Command                                 | Default key | Select current...    |
+|-----------------------------------------+-------------+----------------------|
+| ~latex-table-wizard-select-deselect-cell~ | ~SPC~         | select/deselect cell |
+| ~latex-table-wizard-select-column~        | ~c~           | select column        |
+| ~latex-table-wizard-select-row~           | ~r~           | deselect row         |
+| ~latex-table-wizard-deselect-all~         | ~d~           | deselect all         |
 
-Things can be deselected too:
-
-| Command                              | Default key | Deselect current... |
-|--------------------------------------+-------------+---------------------|
-| ~latex-table-wizard-deselect-cell~   | ~d SPC~     | cell                |
-| ~latex-table-wizard-deselect-column~ | ~d c~       | column              |
-| ~latex-table-wizard-deselect-row~    | ~d r~       | row                 |
+The first command, ~latex-table-wizard-select-deselect-cell~ toggles the
+status of the current cell as being selected or not.
 
 Once things are selected, you move point somewhere else in the table
 (with the above mentioned motion commands), and then:
@@ -190,25 +234,93 @@ potentially discontinuous segment of) a column or a row, then that
 selection is swapped with the current column or row or the
 corresponding portion thereof.  If you selected multiple cell that are
 not part of the same column or row, the swap won't happen
-(LaTeX-table-wizard doesn't know what to do).
+(LaTeX-table-wizard doesn't know what you want it to do in that case).
 
 ** Format the table
 
-Two more command fix the appearance of the table.  To "compress" the
-table by removing excess white space at the edges of each cell, call
-~latex-table-wizard-clean-whitespace~.
-
-Call ~latex-table-wizard-align~ if you want the columns to be vertically
-aligned too (and each row starting on its own line).  If you call this
-command repeatedly, it will cycle through three modes of alignment of
-the text in the cells: align text left, center, and right.  This
-alignment command tries to be smart and not be fooled by column or row
-delimiters embedded in a cell.
+The only command to format the table is ~latex-table-wizard-align~.  The
+behavior of this command is cyclic, in the sense that calling it
+repeatedly causes the table to cycle through four types of formatting:
+left aligned, centered, right aligned and compressed.  The latter
+state is actually not one of alignment (that is, the column separators
+are not vertically aligned): it just means that all the extra space at
+the beginning and end of each cell is collapsed into one.
 
 | Command                             | Default key |
 |-------------------------------------+-------------|
-| ~latex-table-wizard-clean-whitespace~ | ~w~           |
 | ~latex-table-wizard-align~            | ~TAB~         |
+
+The following five tables illustrate the effect of calling
+~latex-table-wizard-align~ repeatedly.
+
+This is the original cell:
+
+#+begin_src LaTeX
+\begin{tabular}{lll}
+ A2 longer cell & B2  & C2  \\\hline
+  A1 & B1 & C1 \\ A0  & B0 \makecell{longer & nested cell}     & C0
+\end{tabular}
+#+end_src
+
+left aligned:
+
+#+begin_src LaTeX
+\begin{tabular}{lll}
+ A2 longer cell & B2                                 & C2 \\\hline
+ A1             & B1                                 & C1 \\
+ A0             & B0 \makecell{longer & nested cell} & C0
+\end{tabular}
+#+end_src
+
+centered:
+
+#+begin_src LaTeX
+\begin{tabular}{lll}
+ A2 longer cell &                 B2                 & C2 \\\hline
+       A1       &                 B1                 & C1 \\
+       A0       & B0 \makecell{longer & nested cell} & C0
+\end{tabular}
+#+end_src
+
+right aligned:
+
+#+begin_src LaTeX
+\begin{tabular}{lll}
+ A2 longer cell &                                 B2 & C2 \\\hline
+             A1 &                                 B1 & C1 \\
+             A0 & B0 \makecell{longer & nested cell} & C0
+\end{tabular}
+#+end_src
+
+compressed:
+
+#+begin_src LaTeX
+\begin{tabular}{lll}
+ A2 longer cell & B2 & C2 \\\hline
+ A1 & B1 & C1 \\
+ A0 & B0 \makecell{longer & nested cell} & C0
+\end{tabular}
+#+end_src
+
+As you can see, ~latex-table-wizard-align~ also forces every row of the
+table to start on its own line.
+
+As always, this alignment command tries to be smart and not be fooled
+by column or row delimiters embedded in a cell.
+
+** Extra commands in the transient prefix
+The transient interfaces invoked by ~latex-table-wizard~ also exposes
+some other commands that are not defined by this package but are
+useful for its usage.  These are:
+
+| Command                 | Default key |
+|-------------------------+-------------|
+| ~toggle-truncate-lines~   | ~t~           |
+| ~undo~                    | ~/~           |
+| ~exchange-point-and-mark~ | ~x~           |
+| ~universal-argument~      | ~u~           |
+| ~transient-quit-one~      | ~RET~         |
+
 
 * Known issues
 
@@ -230,80 +342,29 @@ parser sees some text.
 
 So instead of ~\\ \\~ we will have ~\\ \blk{} \\~.
 * Customization
-** Change keybindings
-To change the default keybindings, you need to provide a new
-definition of the transient prefix ~latex-table-wizard-prefix~ through
-the macro ~transient-define-prefix~.
 
-The default definition, which is the one assumed in this readme so
-far, is below:
+To quickly access all customizations pertinent to LaTeX-table-wizard
+through the Customize interface, call ~latex-table-wizard-customize~.
+
+** Customize transient prefix
+:PROPERTIES:
+:CUSTOM_ID: custom-transient-prefix
+:END:
+To change the default key bindings, you need to provide change the
+value of the alist ~latex-table-wizard-transient-keys~.  The easiest and
+most convenient way to do it is through ~latex-table-wizard-customize~.
+
+Each cons cell in this alist maps a command to a key description
+string (the kind of strings that the macro ~kbd~ takes as arguments).
+
+For example, these three cons cells are members of the default value of
+~latex-table-wizard-transient-keys~:
 
 #+begin_src emacs-lisp
-(transient-define-prefix latex-table-wizard-prefix ()
-  [:description
-   "      LaTeX table wizard"
-   ["Motion"
-    ;; latex-table-wizard--motion-suffixes
-    ("f" "move right" latex-table-wizard-right :transient t)
-    ("b" "move left" latex-table-wizard-left :transient t)
-    ("p" "move down" latex-table-wizard-up :transient t)
-    ("n" "move up" latex-table-wizard-down :transient t)
-    ""
-    ("F" "end of row" latex-table-wizard-end-of-row :transient t)
-    ("B" "beginning of row" latex-table-wizard-beginning-of-row :transient t)
-    ("P" "top" latex-table-wizard-top :transient t)
-    ("N" "bottom" latex-table-wizard-bottom :transient t)
-    ""
-    ("a" "beginning of cell" latex-table-wizard-beginning-of-cell :transient t)
-    ("e" "end of cell" latex-table-wizard-end-of-cell :transient t)
-    ""
-    ("u" "universal argument" universal-argument :transient t)]
-   ["Swap"
-    ;; latex-table-wizard--swap-cell-suffixes
-    ("C-f" "swap cell right" latex-table-wizard-swap-cell-right :transient t)
-    ("C-b" "swap cell left" latex-table-wizard-swap-cell-left :transient t)
-    ("C-p" "swap cell up" latex-table-wizard-swap-cell-up :transient t)
-    ("C-n" "swap cell down" latex-table-wizard-swap-cell-down :transient t)
-    ""
-    ;; latex-table-wizard--swap-line-suffixes
-    ("M-f" "swap column right" latex-table-wizard-swap-column-right :transient t)
-    ("M-b" "swap column left" latex-table-wizard-swap-column-left :transient t)
-    ("M-p" "swap row up" latex-table-wizard-swap-row-up :transient t)
-    ("M-n" "swap row down" latex-table-wizard-swap-row-down :transient t)
-    ""
-    "Other"
-    ;; latex-table-wizard--other-suffixes
-    ("w" "compress table" latex-table-wizard-clean-whitespace :transient t)
-    ("TAB" "align table" latex-table-wizard-align :transient t)
-    ("/" "undo" undo :transient t)
-    ""
-    ("RET" "done" transient-quit-one)]
-   ["Select and swap"
-    ("SPC" "select cell" latex-table-wizard-select-cell :transient t)
-    ("c" "select column" latex-table-wizard-select-column :transient t)
-    ("r" "select row" latex-table-wizard-select-row :transient t)
-    ("d SPC" "deselect cell" latex-table-wizard-deselect-cell :transient t)
-    ("d c" "select column" latex-table-wizard-deselect-column :transient t)
-    ("d r" "select row" latex-table-wizard-deselect-row :transient t)
-    ""
-    ("s" "swap selection" latex-table-wizard-swap :transient t)
-    ""
-    "Mark, kill and insert"
-    ;; latex-table-wizard--mark-suffixes
-    ("x" "exchange point and mark" exchange-point-and-mark :transient t)
-    ("m c" "mark cell" latex-table-wizard-mark-cell :transient t)
-    ("i c" "insert column right" latex-table-wizard-insert-column :transient t)
-    ("i r" "insert row below" latex-table-wizard-insert-row :transient t)
-    ("k c" "kill current column" latex-table-wizard-kill-column :transient t)
-    ("k r" "kill current row" latex-table-wizard-kill-row :transient t)]])
+(undo . "//")
+(latex-table-wizard-swap-cell-right . "C-f")
+(latex-table-wizard-insert-row . "i r")
 #+end_src
-
-Just put a copy of this macro calling with the appropriate
-modifications in your configuration file.  The first element of each
-list in the vectors is the key (given in the same syntax as the ~kbd~
-macro accepts).  You can also move around or remove some of these
-cells if you want to change the layout of the transient interface.
-
 
 ** Define rules for new environments
 :PROPERTIES:
@@ -334,7 +395,23 @@ Each member of this list is a string that would be between the
 \"\\\" and the arguments."
   :type '(repeat string)
   :group 'latex-table-wizard)
+#+end_src
 
+ LaTeX-table-wizard will always presume the table you want operate on
+ has a syntax specified like this.  But suppose you use different
+ environments with non-standard syntax: suppose you define a
+ table-like environment of your choice, let's call it ~mytable~, that
+ uses ~!ROW~ and ~!COL~ instead of ~&~ and ~\\~ as delimiters, and a macro
+ ~\horizontal~ for horizontal lines.  When you are in a ~mytable~
+ environments, you want LaTeX-table-wizard to adapt to this new
+ syntax.
+
+ All you need to do add an appropriate cons cell to the
+ ~latex-table-wizard-new-environments-alist~ association list, mapping
+ the name of the environment, as a string, to a property list
+ specifying the values.  Here is this variable's ~defcustom~ expression:
+
+ #+begin_src emacs-lisp
 (defcustom latex-table-wizard-new-environments-alist nil
   "Alist mapping environment names to property lists.
 
@@ -363,27 +440,47 @@ of a macro that inserts some horizontal line.  For a macro
                                    :value-type (repeat string)))
 
   :group 'latex-table-wizard)
-#+end_src
+ #+end_src
 
- LaTeX-table-wizard will always presume the table you want operate on
- has a syntax specified like this.  But suppose you use different
- environments with non-standard syntax: suppose you define a
- table-like environment of your choice, let's call it ~mytable~, that
- uses ~!ROW~ and ~!COL~ instead of ~&~ and ~\\~ as delimiters, and a macro
- ~\horizontal~ for horizontal lines.  When you are in a ~mytable~
- environments, you want LaTeX-table-wizard to adapt to this new
- syntax.
-
- All you need to do add an appropriate cons cell to the
- ~latex-table-wizard-new-environments-alist~ association list, mapping
- the name of the environment, as a string, to a property list
- specifying the values.  For the case of ~mytable~ you would do:
+You can add the new syntax for the ~mytable~ environment through the
+Customize interface, which will present you with the correct values to
+set, or you can just add a cons cell of your writing to the alist:
 
  #+begin_src emacs-lisp
 (add-to-list 'latex-table-wizard-new-environments-alist
              '("mytable" . (:col ("!COL") :row ("!ROW") :lines ("horizontal"))))
  #+end_src
 
- A more convenient way to customize these variables is through the
- ~customize~ interface, which is easily accessed through the interactive
- command ~latex-table-wizard-customize~.
+Each of the values in the plist is a list of strings: this way you can
+define environments that can use more than one type of column
+separator.  Importantly, the strings in the ~:lines~ list are *names of
+LaTeX* macros, which means that they should not start with the
+backslash and you should not add any argument to them.  In the example
+above a buffer substring like =\horizontal{1}= will be interpreted as a
+hline macro if in a ~mytable~ environment.
+
+** Customizing faces
+
+ Calling ~latex-table-wizard~ by default causes the portions of the
+ buffer before and after the table at point to be "grayed out", so
+ that you can clearly focus on the table.  If you don't want this to
+ happen, set the value of the variable ~latex-table-wizard-no-focus~ to
+ ~t~.
+
+ If instead you want effect to be different than the default (which is
+ applying a foreground of color ~gray40~), change the value of the face
+ ~latex-table-wizard-background~.
+
+ By default, when you move around the table and select objects from it
+ the relevant portions of the table are highlighted.  If you don't
+ want this to happen, set the value of the variable
+ ~latex-table-wizard-no-highlight~ to ~t~.
+
+ If instead you want the highlighting to be done differently than the
+ default (which is applying a background of the same color as the
+ loaded theme defines for the active region), change the value of the
+ face ~latex-table-wizard-highlight~.
+
+ The easiest and most convenient way to set these variables,
+ especially the two faces, is through the Customize interface, which
+ you can access quickly by calling ~latex-table-wizard-customize~.

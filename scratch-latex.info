@@ -1,0 +1,29 @@
+This is scratch-latex.info, produced by makeinfo version 6.8 from
+scratch-latex.texi.
+
+
+File: scratch-latex.info,  Node: Top,  Up: (dir)
+
+(add-to-list ’latex-table-wizard-transient-keys
+’(latex-table-wizard-right .  "OL") )
+
+   latex-table-wizard–align-status
+
+   latex-table-wizard–parse
+
+   & B2 & C2 \\ A1 & B1 & C1
+A0 & B0 & C0
+
+   latex-table-wizard-transient-keys
+
+
+
+Tag Table:
+Node: Top87
+
+End Tag Table
+
+
+Local Variables:
+coding: utf-8
+End:
