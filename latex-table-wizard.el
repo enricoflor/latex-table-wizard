@@ -5,7 +5,7 @@
 ;; Author: Enrico Flor <enrico@eflor.net>
 ;; Maintainer: Enrico Flor <enrico@eflor.net>
 ;; URL: https://github.com/enricoflor/latex-table-wizard
-;; Version: 1.0.2
+;; Version: 1.0.3
 ;; Keywords: convenience
 
 ;; Package-Requires: ((emacs "27.1") (auctex "12.1") (transient "0.3.7"))
@@ -488,21 +488,22 @@ F, C precedes D and so on; and if DIR is either \\='next\\=' or
          (prop (if vert :row :column))
          (thing (if vert
                     (latex-table-wizard--get-thing 'column table)
-                  (latex-table-wizard--get-thing 'row table))))
+                  (latex-table-wizard--get-thing 'row table)))
+         (copy-table (copy-sequence table)))
     (if (not same-line)
-        (sort table (lambda (x y)
-                      (let ((rows `(,(plist-get x :row)
-                                    ,(plist-get y :row)))
-                            (cols `(,(plist-get x :column)
-                                    ,(plist-get y :column))))
-                        (cond ((and vert (apply #'= cols))
-                               (apply #'< rows))
-                              (vert
-                               (apply #'< cols))
-                              ((apply #'= rows)
-                               (apply #'< cols))
-                              (t
-                               (apply #'< rows))))))
+        (sort copy-table (lambda (x y)
+                           (let ((rows `(,(plist-get x :row)
+                                         ,(plist-get y :row)))
+                                 (cols `(,(plist-get x :column)
+                                         ,(plist-get y :column))))
+                             (cond ((and vert (apply #'= cols))
+                                    (apply #'< rows))
+                                   (vert
+                                    (apply #'< cols))
+                                   ((apply #'= rows)
+                                    (apply #'< cols))
+                                   (t
+                                    (apply #'< rows))))))
       (sort thing (lambda (x y) (< (plist-get x prop)
                                    (plist-get y prop)))))))
 
