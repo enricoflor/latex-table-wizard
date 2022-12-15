@@ -272,7 +272,8 @@ Stop the skipping at LIMIT (a buffer position or a marker)."
             (when (looking-at (concat
                                "[[:space:]]*"
                                (string-join
-                                latex-table-wizard--current-col-delims)))
+                                latex-table-wizard--current-col-delims
+                                "\\|")))
               (throw 'stop nil)))
           (ignore-errors
             (goto-char (latex-table-wizard--end-of-macro
@@ -401,8 +402,8 @@ Each value is an integer, S and E are markers."
                     (point-marker)))
          (hash (secure-hash 'sha256
                             (buffer-substring-no-properties env-beg env-end)))
-         (col-re (string-join latex-table-wizard--current-col-delims))
-         (row-re (string-join latex-table-wizard--current-row-delims)))
+         (col-re (string-join latex-table-wizard--current-col-delims "\\|"))
+         (row-re (string-join latex-table-wizard--current-row-delims "\\|")))
     (if (and (equal `(,env-beg . ,env-end) (nth 0 latex-table-wizard--parse))
              (equal hash (nth 1 latex-table-wizard--parse)))
         (nth 2 latex-table-wizard--parse)
@@ -1432,7 +1433,8 @@ Only remove them in current buffer."
                       `(,(regexp-opt
                           (append latex-table-wizard--current-row-delims
                                   latex-table-wizard--current-col-delims))
-                        ,latex-table-wizard--macro-re))
+                        ,latex-table-wizard--macro-re)
+                      "\\|")
                      0 (line-beginning-position))))
     (thread-last macro
                  (nth 1)
