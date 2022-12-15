@@ -5,7 +5,7 @@
 ;; Author: Enrico Flor <enrico@eflor.net>
 ;; Maintainer: Enrico Flor <enrico@eflor.net>
 ;; URL: https://github.com/enricoflor/latex-table-wizard
-;; Version: 1.0.1
+;; Version: 1.0.2
 ;; Keywords: convenience
 
 ;; Package-Requires: ((emacs "27.1") (auctex "12.1") (transient "0.3.7"))
@@ -241,11 +241,17 @@ If the current environment is one that is mapped to something in
   "If looking at unescaped macro named NAME, go to its end.
 
 If NAME is nil, skip any LaTeX macro that point is looking at."
-  (let* ((n (or name (rx (one-or-more alnum))))
-         (macro-re (concat "\\\\" n latex-table-wizard--macro-args-re)))
-    (when (latex-table-wizard--unescaped-p)
-      (when (looking-at macro-re)
-        (match-end 0)))))
+  (save-excursion
+    (let* ((n (concat "\\(?1:" (or name (rx (one-or-more alnum))) "\\)"))
+           (macro-re (concat "\\\\" n latex-table-wizard--macro-args-re)))
+      ;; this trouble is to deal with problematic arguments to the
+      ;; environment being macro like:
+      ;;    \begin{tabular}{@{} llllllll}
+      (when (and (latex-table-wizard--unescaped-p)
+                 (looking-at macro-re))
+        (goto-char (match-end 1))         ; goto end of name
+        (while (looking-at-p "{\\|\\[") (forward-sexp))
+        (point)))))
 
 (defun latex-table-wizard--skip-stuff (limit)
   "Skip comments, blank space and hline macros.
@@ -312,12 +318,15 @@ argument."
              ;; the first step is important to avoid being fooled by
              ;; column or row delimiters in comments!
              (forward-line))
-            ((looking-at "[[:space:]]*\\\\begin{[[:alnum:]]+}")
-             (skip-syntax-forward " ")
+            ((looking-at-p "[[:space:]]+")
+             (skip-syntax-forward " "))
+            ((looking-at (concat "\\\\begin" latex-table-wizard--macro-args-re))
              (forward-char 1)
              (LaTeX-find-matching-end))
-            ((looking-at (concat "[[:space:]]*" latex-table-wizard--macro-re))
-             (goto-char (match-end 0)))
+            ((and (latex-table-wizard--unescaped-p)
+                  (looking-at latex-table-wizard--macro-re))
+             (goto-char (latex-table-wizard--end-of-macro
+                         (match-string-no-properties 1))))
             ((and (looking-at col-re)
                   (latex-table-wizard--unescaped-p))
              ;; a column delimiter: bingo
