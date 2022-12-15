@@ -5,7 +5,7 @@
 ;; Author: Enrico Flor <enrico@eflor.net>
 ;; Maintainer: Enrico Flor <enrico@eflor.net>
 ;; URL: https://github.com/enricoflor/latex-table-wizard
-;; Version: 1.0.0
+;; Version: 1.0.1
 ;; Keywords: convenience
 
 ;; Package-Requires: ((emacs "27.1") (auctex "12.1") (transient "0.3.7"))
@@ -1396,18 +1396,15 @@ all defined faces."
   :group 'latex-table-wizard)
 
 (defun latex-table-wizard--hide-rest ()
-  "Apply foreground on parts of buffer outside of table at point.
-
-Do nothing if `latex-table-wizard-foreground-color' is nil."
-  (when latex-table-wizard-foreground-color
-    (latex-table-wizard--parse-table)
-    (let* ((tab-b (car (car latex-table-wizard--parse)))
-           (tab-e (cdr (car latex-table-wizard--parse)))
-           (ols `(,(make-overlay (point-min) tab-b)
-                  ,(make-overlay tab-e (point-max)))))
-      (dolist (x ols)
-        (overlay-put x 'tabl-outside-ol t)
-        (overlay-put x 'face 'latex-table-wizard-background)))))
+  "Apply foreground on parts of buffer outside of table at point."
+  (latex-table-wizard--parse-table)
+  (let* ((tab-b (car (car latex-table-wizard--parse)))
+         (tab-e (cdr (car latex-table-wizard--parse)))
+         (ols `(,(make-overlay (point-min) tab-b)
+                ,(make-overlay tab-e (point-max)))))
+    (dolist (x ols)
+      (overlay-put x 'tabl-outside-ol t)
+      (overlay-put x 'face 'latex-table-wizard-background))))
 
 (defun latex-table-wizard--cleanup ()
   "Remove all overlays created by \\='latex-table-wizard\\='.
