@@ -90,7 +90,7 @@
 
 (require 'latex)
 (require 'seq)
-(require 'rx)
+(eval-when-compile (require 'rx))
 (require 'regexp-opt)
 (eval-when-compile (require 'subr-x))
 (require 'transient)
