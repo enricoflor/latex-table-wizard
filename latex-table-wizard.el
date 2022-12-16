@@ -121,13 +121,11 @@ Capture group 1 matches the name of the macro.")
 
 (defcustom latex-table-wizard-column-delimiters '("&")
   "List of strings that are column delimiters if unescaped."
-  :type '(repeat string)
-  :group 'latex-table-wizard)
+  :type '(repeat string))
 
 (defcustom latex-table-wizard-row-delimiters '("\\\\\\\\")
   "List of strings that are row delimiters if unescaped."
-  :type '(repeat string)
-  :group 'latex-table-wizard)
+  :type '(repeat string))
 
 (defcustom latex-table-wizard-hline-macros '("cline"
                                              "vline"
@@ -139,8 +137,7 @@ Capture group 1 matches the name of the macro.")
 
 Each member of this list is a string that would be between the
 \"\\\" and the arguments."
-  :type '(repeat string)
-  :group 'latex-table-wizard)
+  :type '(repeat string))
 
 (defcustom latex-table-wizard-new-environments-alist nil
   "Alist mapping environment names to property lists.
@@ -167,15 +164,7 @@ of a macro that inserts some horizontal line.  For a macro
   :type '(alist :key-type (string :tag "Name of the environment:")
                 :value-type (plist :key-type symbol
                                    :options (:col :row :lines)
-                                   :value-type (repeat string)))
-
-  :group 'latex-table-wizard)
-
-(defmacro latex-table-wizard--or (symbol &rest values)
-  "Return non-nil if SYMBOL is `eq' to one of VALUES."
-  (let ((bools (mapcar (lambda (value) `(eq ,symbol ,value))
-                       values)))
-    `(or ,@bools)))
+                                   :value-type (repeat string))))
 
 (defun latex-table-wizard--unescaped-p (&optional position)
   "Return t if LaTeX macro starting at POSITION is not escaped.
@@ -452,18 +441,15 @@ is a cons cell of the form (P . V), where P is either
 If prop-val2 is nil, it is assumed that TABLE is a list of cells
 that only differ for the property in the car of PROP-VAL1 (in
 other words, that TABLE is either a column or a row)"
-  (if prop-val2
-      (catch 'cell
+  (catch 'cell
+    (if prop-val2
         (dolist (x table)
           (when (and (= (cdr prop-val1) (plist-get x (car prop-val1)))
                      (= (cdr prop-val2) (plist-get x (car prop-val2))))
             (throw 'cell x)))
-        nil)
-    (catch 'cell
       (dolist (x table)
         (when (= (cdr prop-val1) (plist-get x (car prop-val1)))
-          (throw 'cell x)))
-      nil)))
+          (throw 'cell x))))))
 
 (defun latex-table-wizard--sort (table same-line dir)
   "Return a sorted table, column or row given TABLE.
@@ -484,7 +470,7 @@ like this:
 if DIR is either \\='forward\\=' or \\='backward\\=', A follows
 F, C precedes D and so on; and if DIR is either \\='next\\=' or
 \\='previous\\=', A follows F, D precedes B and so on."
-  (let* ((vert (latex-table-wizard--or dir 'next 'previous))
+  (let* ((vert (memq dir '(next previous)))
          (prop (if vert :row :column))
          (thing (if vert
                     (latex-table-wizard--get-thing 'column table)
@@ -492,10 +478,10 @@ F, C precedes D and so on; and if DIR is either \\='next\\=' or
          (copy-table (copy-sequence table)))
     (if (not same-line)
         (sort copy-table (lambda (x y)
-                           (let ((rows `(,(plist-get x :row)
-                                         ,(plist-get y :row)))
-                                 (cols `(,(plist-get x :column)
-                                         ,(plist-get y :column))))
+                           (let ((rows (list (plist-get x :row)
+                                             (plist-get y :row)))
+                                 (cols (list (plist-get x :column)
+                                             (plist-get y :column))))
                              (cond ((and vert (apply #'= cols))
                                     (apply #'< rows))
                                    (vert
@@ -536,10 +522,9 @@ beginning of the available portion of the buffer."
         (catch 'found
           (while (re-search-forward regexp nil t)
             (when (<= (match-beginning group) position (match-end group))
-              (throw 'found `(,(match-string-no-properties group)
-                              ,(match-beginning group)
-                              ,(match-end group))))
-            nil))))))
+              (throw 'found (list (match-string-no-properties group)
+                                  (match-beginning group)
+                                  (match-end group))))))))))
 
 
 
@@ -587,7 +572,7 @@ current DIR."
          (sorted (latex-table-wizard--sort table same-line dir))
          (cell-num (1- (length sorted)))
          (now (seq-position sorted curr))
-         (land (if (latex-table-wizard--or dir 'next 'forward)
+         (land (if (memq dir '(next forward))
                    (latex-table-wizard--get-landing-index
                     now steps 0 cell-num)
                  (latex-table-wizard--get-landing-index
@@ -711,7 +696,7 @@ If SAME-LINE is non-nil, never leave current column or row."
                      (latex-table-wizard--get-other-cell
                       dir same-line count cells curr)
                    (let ((sorted (latex-table-wizard--sort cells t dir)))
-                     (if (latex-table-wizard--or dir 'previous 'backward)
+                     (if (memq dir '(previous backward))
                          (car sorted)
                        (car (last sorted)))))))
     (latex-table-wizard--remove-overlays cells)
@@ -726,36 +711,29 @@ If SAME-LINE is non-nil, never leave current column or row."
 
 ;;; Swapping functions
 
-(defun latex-table-wizard--swap-substrings (x y)
-  "Swap two buffer substrings.
-
-X and Y are each a list of the form \\='(B E)\\=', where B and E
-are markers corresponding to the beginning and the end of the
-buffer substring."
+(defun latex-table-wizard--swap-cells (x y)
+  "Swap the content of two cells X and Y."
   (save-excursion
-    (let ((x-string (concat " "
-                            (string-trim
-                             (apply #'buffer-substring x))
-                            " "))
-          (y-string (concat " "
-                            (string-trim
-                             (apply #'buffer-substring y))
-                            " ")))
-      (goto-char (nth 1 x))
-      (apply #'delete-region x)
+    (let ((x-string (concat
+                     " "
+                     (string-trim
+                      (buffer-substring (plist-get x :start)
+                                        (plist-get x :end)))
+                     " "))
+          (y-string (concat
+                     " "
+                     (string-trim
+                      (buffer-substring (plist-get y :start)
+                                        (plist-get y :end)))
+                     " ")))
+      (goto-char (plist-get x :end))
+      (delete-region (plist-get x :start) (plist-get x :end))
       (insert y-string)
       (just-one-space)
-      (goto-char (nth 1 y))
-      (apply #'delete-region y)
+      (goto-char (plist-get y :end))
+      (delete-region (plist-get y :start) (plist-get y :end))
       (insert x-string)
       (just-one-space))))
-
-(defun latex-table-wizard--swap-cells (x y)
-  "Evaluate `latex-table-wizard--swap-substrings' on cells X and Y."
-  (latex-table-wizard--swap-substrings `(,(plist-get x :start)
-                                         ,(plist-get x :end))
-                                       `(,(plist-get y :start)
-                                         ,(plist-get y :end))))
 
 (defun latex-table-wizard--type-of-selection (sel)
   "Return type of list of cells SEL.
@@ -790,9 +768,9 @@ DIR is either \\='forward\\=', \\='backward\\=', \\='next\\=' or
 TYPE is either \\='cell\\=', \\='column\\=' or \\='row\\='."
   (latex-table-wizard--remove-overlays)
   (cond ((eq type 'cell) (latex-table-wizard-select-deselect-cell t))
-        ((latex-table-wizard--or dir 'forward 'backward)
+        ((memq dir '(forward backward))
          (latex-table-wizard-select-column t))
-        ((latex-table-wizard--or dir 'previous 'next)
+        ((memq dir '(previous next))
          (latex-table-wizard-select-row t)))
   (latex-table-wizard--jump dir nil 1 t)
   (latex-table-wizard-swap)
@@ -821,7 +799,7 @@ Don't print any message if NO-MESSAGE is non-nil."
              (message "Cell (%s,%s) selected for swapping"
                       (plist-get sel :column)
                       (plist-get sel :row)))
-           (latex-table-wizard--hl-cells `(,sel)))
+           (latex-table-wizard--hl-cells (list sel)))
           ((eq thing 'row)
            (unless no-message
              (message "Row %s selected for swapping"
@@ -1263,41 +1241,7 @@ how the data stored in this variable and in
 of the transient prefix)."
   :type '(alist :key-type
                 (symbol :tag "Command:"
-                        :options (toggle-truncate-lines
-                                  exchange-point-and-mark
-                                  universal-argument
-                                  transient-quit-all
-                                  undo
-                                  latex-table-wizard-right
-                                  latex-table-wizard-right
-                                  latex-table-wizard-left
-                                  latex-table-wizard-up
-                                  latex-table-wizard-down
-                                  latex-table-wizard-end-of-row
-                                  latex-table-wizard-beginning-of-row
-                                  latex-table-wizard-top
-                                  latex-table-wizard-bottom
-                                  latex-table-wizard-beginning-of-cell
-                                  latex-table-wizard-end-of-cell
-                                  latex-table-wizard-mark-cell
-                                  latex-table-wizard-swap-cell-right
-                                  latex-table-wizard-swap-cell-left
-                                  latex-table-wizard-swap-cell-up
-                                  latex-table-wizard-swap-cell-down
-                                  latex-table-wizard-swap-column-right
-                                  latex-table-wizard-swap-column-left
-                                  latex-table-wizard-swap-row-up
-                                  latex-table-wizard-swap-row-down
-                                  latex-table-wizard-align
-                                  latex-table-wizard-select-column
-                                  latex-table-wizard-select-row
-                                  latex-table-wizard-select-deselect-cell
-                                  latex-table-wizard-deselect-all
-                                  latex-table-wizard-swap
-                                  latex-table-wizard-insert-column
-                                  latex-table-wizard-insert-row
-                                  latex-table-wizard-kill-column
-                                  latex-table-wizard-kill-row))
+                        :options ,(mapcar #'car latex-table-wizard-default-keys))
                 :value-type string)
   :group 'latex-table-wizard)
 
@@ -1470,6 +1414,7 @@ Only remove them in current buffer."
   (latex-table-wizard--hide-rest)
   (call-interactively #'latex-table-wizard-prefix))
 
+;;;###autoload
 (defun latex-table-wizard-customize ()
   "Access customization interface for \\='latex-table-wizard\\='."
   (interactive)
