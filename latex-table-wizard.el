@@ -5,7 +5,7 @@
 ;; Author: Enrico Flor <enrico@eflor.net>
 ;; Maintainer: Enrico Flor <enrico@eflor.net>
 ;; URL: https://github.com/enricoflor/latex-table-wizard
-;; Version: 1.0.3
+;; Version: 1.1.0
 ;; Keywords: convenience
 
 ;; Package-Requires: ((emacs "27.1") (auctex "12.1") (transient "0.3.7"))
@@ -43,14 +43,15 @@
 ;; while point is inside of a table(-like) environment.  From there, you
 ;; can do several things such as:
 
-;; + navigate "logically" (that is, move by cells);
-;; + insert or kill rows or column;
-;; + move arbitrary cells or groups of cells around;
-;; + align the table in different ways (however alignment is not needed
-;;   for the functionalities above).
+;;   + navigate "logically" (that is, move by cells);
+;;   + insert or kill rows or column;
+;;   + move arbitrary cells or groups of cells around;
+;;   + align the table in different ways (however alignment is not
+;;     needed for the functionalities above).
 
-;; Standard LaTeX2e table environments are supported out of the box, but
-;; you can define additional ones.  The entry point for customization is
+;; Standard LaTeX2e table environments are supported out of the box,
+;; but you can define additional ones.  The entry point for
+;; customization is
 
 ;;     M-x latex-table-wizard-customize
 
@@ -69,14 +70,16 @@
 ;; column and row separators are strings like "\COL" and "\ROW", and
 ;; the LaTeX macro to add a horizontal line is "\myhline{}":
 
-;;  \begin{mytable}
-;;      ...
-;;  \end{mytable}
+;;    \begin{mytable}
+;;        ...
+;;    \end{mytable}
 
 ;; For latex-table-wizard to handle this table, just add the following
 ;; cons cell to latex-table-wizard-new-environments-alist:
 
-;;  '("mytable" . (:col '("\\COL") :row '("\\ROW") :lines '("myhline")))
+;;    '("mytable" . (:col '("\\COL")
+;;                   :row '("\\ROW")
+;;                   :lines '("myhline")))
 
 ;; Each value is a list of strings to allow for more than one macro to
 ;; have the same function.
@@ -101,13 +104,21 @@
 
 ;;; Regular expressions and configuration options
 
+;; this rx expression matches what can separate different arguments of
+;; a (La)TeX macro: whitespace and comments
+(rx-define latex-table-wizard--blank-rx
+  (seq (* space) (? (seq "%" (* not-newline))) "\n"
+       (* (seq (* space) "%" (* not-newline) "\n"))
+       (* space)))
+
 (defconst latex-table-wizard--macro-args-re
-  (rx (seq (zero-or-more                    ; obligatory arguments
-            (seq "{" (*? anything) "}"))
-           (zero-or-more                    ; optional arguments
-            (seq "[" (*? anything) "]" ))
-           (zero-or-more                    ; obligatory arguments
-            (seq "{" (*? anything) "}"))))
+  (rx (seq (? latex-table-wizard--blank-rx)
+           (* (seq "{" (*? anything) "}"
+                   latex-table-wizard--blank-rx))
+           (* (seq "[" (*? anything) "]"
+                   latex-table-wizard--blank-rx))
+           (* (seq "{" (*? anything) "}"
+                   latex-table-wizard--blank-rx))))
   "Regexp matching argument part of LaTeX macros.")
 
 (defconst latex-table-wizard--macro-re
@@ -238,7 +249,16 @@ If NAME is nil, skip any LaTeX macro that point is looking at."
       (when (and (latex-table-wizard--unescaped-p)
                  (looking-at macro-re))
         (goto-char (match-end 1))         ; goto end of name
-        (while (looking-at-p "{\\|\\[") (forward-sexp))
+        ;; now this is tricky: different arguments can be separated by
+        ;; whitespace and one line break.  We have to take this into
+        ;; account but also not be fooled by comments!  Actually
+        ;; forward-sexp is smart enough already to skip comments, but
+        ;; it skips too much: even two line breaks and of course it
+        ;; skips stuff that is not a LaTeX argument group.
+        (while (looking-at-p "{\\|\\[")
+          (forward-sexp)
+          (when (looking-at "[[:space:]]*\\(%.*\n\\)?[[:space:]]*")
+            (goto-char (match-end 0))))
         (point)))))
 
 (defun latex-table-wizard--skip-stuff (limit)
@@ -265,10 +285,8 @@ Stop the skipping at LIMIT (a buffer position or a marker)."
               (throw 'stop nil)))
           (ignore-errors
             (goto-char (latex-table-wizard--end-of-macro
-                        (concat
-                         (regexp-opt
-                          latex-table-wizard--current-hline-macros)
-                         latex-table-wizard--macro-args-re))))
+                        (regexp-opt
+                         latex-table-wizard--current-hline-macros))))
           (when (looking-at "\n\\|%")
             (forward-line)
             (setq new-start-of-line (point)))
@@ -309,7 +327,8 @@ argument."
              (forward-line))
             ((looking-at-p "[[:space:]]+")
              (skip-syntax-forward " "))
-            ((looking-at (concat "\\\\begin" latex-table-wizard--macro-args-re))
+            ((and (latex-table-wizard--unescaped-p)
+                  (looking-at-p "\\\\begin\\({\\|\\[\\)"))
              (forward-char 1)
              (LaTeX-find-matching-end))
             ((and (latex-table-wizard--unescaped-p)
@@ -375,17 +394,17 @@ Each value is an integer, S and E are markers."
   (let* ((cells-list '())
          (col 0)
          (row 0)
+         (env-name (LaTeX-current-environment))
          (env-beg (save-excursion
                     (LaTeX-find-matching-begin)
                     (goto-char (latex-table-wizard--end-of-macro))
+                    ;; now we have moved too far ahead looking for
+                    ;; arguments, let's jump back all the whitespace
+                    (skip-syntax-backward " ")
                     (point-marker)))
          (env-end (save-excursion
                     (LaTeX-find-matching-end)
-                    (re-search-backward (concat
-                                         "\\\\"
-                                         (rx (one-or-more alnum))
-                                         latex-table-wizard--macro-args-re)
-                                        nil t)
+                    (re-search-backward (concat "\\\\end{" env-name) nil t)
                     (forward-char -1)
                     (point-marker)))
          (hash (secure-hash 'sha256
@@ -815,20 +834,25 @@ Don't print any message if NO-MESSAGE is non-nil."
 
 (defvar latex-table-wizard--align-status '(left center right compress))
 
-(defun latex-table-wizard-align ()
+(defun latex-table-wizard-align (&optional mode)
   "Align and format table at point.
 
 Have every row start on its own line and vertically align column
 delimiters.
 
-Cycle through three modes of alignment for the text in the cells:
-align left, center, right and no alignment (minimize space at
-cell borders)."
+There are five possible values for MODE:
+
+- \\='left\\=': align left
+- \\='center\\=': center text
+- \\='right\\=': align right
+- \\='compress\\=': remove extra whitespace at cell margins (no
+    alignment)
+- \\='nil\\=': cycle through the four above modes."
   (interactive)
   (latex-table-wizard--remove-overlays)
   (save-excursion
     (let ((message-log-max 0)
-          (mode (car latex-table-wizard--align-status))
+          (md (or mode (car latex-table-wizard--align-status)))
           (max-col (thread-last (latex-table-wizard--parse-table)
                                 (mapcar (lambda (x) (plist-get x :column)))
                                 (delete-dups)
@@ -848,7 +872,7 @@ cell borders)."
                                        (latex-table-wizard--parse-table))))
         (goto-char x)
         (just-one-space))
-      (if (eq mode 'compress)
+      (if (eq md 'compress)
           (message "Table compressed")
         (let ((count 0))
           (while (<= count max-col)
@@ -865,16 +889,16 @@ cell borders)."
                     (let* ((tot (- longest (current-column)))
                            (pre (/ tot 2))
                            (post (- tot pre)))
-                      (cond ((eq mode 'left)
+                      (cond ((eq md 'left)
                              (insert (make-string tot
                                                   (string-to-char " ")))
                              (message "Table content aligned left"))
-                            ((eq mode 'right)
+                            ((eq md 'right)
                              (goto-char (plist-get cell :start))
                              (insert (make-string tot
                                                   (string-to-char " ")))
                              (message "Table content aligned right"))
-                            ((eq mode 'center)
+                            ((eq md 'center)
                              (insert (make-string post
                                                   (string-to-char " ")))
                              (goto-char (plist-get cell :start))
@@ -882,6 +906,34 @@ cell borders)."
                                                   (string-to-char " ")))
                              (message "Table content centered"))))))))
             (setq count (1+ count))))))))
+
+(defun latex-table-wizard-align-left ()
+  "Align text in table to the left.
+
+Make every row start on a new line."
+  (interactive)
+  (latex-table-wizard-align 'left))
+
+(defun latex-table-wizard-align-right ()
+  "Align text in table to the right.
+
+Make every row start on a new line."
+  (interactive)
+  (latex-table-wizard-align 'right))
+
+(defun latex-table-wizard-center ()
+  "Center text in cells.
+
+Make every row start on a new line."
+  (interactive)
+  (latex-table-wizard-align 'center))
+
+(defun latex-table-wizard-compress ()
+  "Remove extra whitespace from cell margins.
+
+Make every row start on a new line."
+  (interactive)
+  (latex-table-wizard-align 'compress))
 
 (defun latex-table-wizard-right (&optional n)
   "Move point N cells to the right.
@@ -1139,22 +1191,32 @@ Selection is the current value of
 cell, a column or a row, swap that with the cell, column or row
 at point.  If it is none of those object, return nil."
   (interactive)
-  (unless latex-table-wizard--selection
-    (user-error "Select thing to swap first"))
-  (let* ((table (latex-table-wizard--parse-table))
-         (other latex-table-wizard--selection)
-         (type (latex-table-wizard--type-of-selection other))
-         (current (latex-table-wizard--get-thing type table)))
-    (cond ((not type)
-           (latex-table-wizard--cleanup)
-           (setq latex-table-wizard--selection nil))
-          ((eq type 'cell)
-           (latex-table-wizard--swap-cells (car other) current))
-          (t
-           (latex-table-wizard--swap-line type other current)))
-    (latex-table-wizard--remove-overlays table)
-    (latex-table-wizard--hl-cells other)
-    (setq latex-table-wizard--selection nil)))
+  (let ((message-log-max 0))
+    (unless latex-table-wizard--selection
+      (message "Select thing to swap first"))
+    (let* ((table (latex-table-wizard--parse-table))
+           ;; we need to remove the current cell from the selection,
+           ;; if it's there, because the general case is that swapping
+           ;; is between the selected cells and the "thing" at point
+           ;; (what this thing is depends on what the selection is).
+           ;; If current cell is selected there will be an attempt of
+           ;; swapping the current cell with itself and this would
+           ;; cause a bug when you are just swapping two cells.
+           (other (remove (latex-table-wizard--get-thing 'cell table)
+                          latex-table-wizard--selection))
+           (type (latex-table-wizard--type-of-selection other))
+           (current (latex-table-wizard--get-thing type table)))
+      (cond ((not type)
+             (latex-table-wizard--cleanup)
+             (setq latex-table-wizard--selection nil)
+             (message "Invalid selection"))
+            ((eq type 'cell)
+             (latex-table-wizard--swap-cells (car other) current))
+            (t
+             (latex-table-wizard--swap-line type other current)))
+      (latex-table-wizard--remove-overlays table)
+      (latex-table-wizard--hl-cells other)
+      (setq latex-table-wizard--selection nil))))
 
 
 
@@ -1353,7 +1415,7 @@ all defined faces."
   "Apply face `latex-table-wizard-background' outside of table."
   (latex-table-wizard--parse-table)
   (let* ((tab-b (car (car latex-table-wizard--parse)))
-         (tab-e (cdr (car latex-table-wizard--parse)))
+         (tab-e (1+ (cdr (car latex-table-wizard--parse))))
          (ols `(,(make-overlay (point-min) tab-b)
                 ,(make-overlay tab-e (point-max)))))
     (dolist (x ols)
