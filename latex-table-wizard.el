@@ -90,6 +90,7 @@
 
 ;;; Dependencies
 
+(require 'tex)
 (require 'latex)
 (require 'seq)
 (eval-when-compile (require 'rx))
@@ -176,20 +177,6 @@ of a macro that inserts some horizontal line.  For a macro
                                    :options (:col :row :lines)
                                    :value-type (repeat string))))
 
-(defun latex-table-wizard--unescaped-p (&optional position)
-  "Return t if LaTeX macro starting at POSITION is not escaped.
-
-If POSITION is nil, use the value of `point'.
-
-A macro is escaped if it is preceded by a single \\='\\\\='."
-  (let ((p (or position (point))))
-    (save-excursion
-      (goto-char p)
-      (save-match-data
-        (looking-back "\\\\*" (line-beginning-position) t)
-        (let ((len (length (match-string-no-properties 0))))
-          (when (eq (logand len 1) 0) t))))))
-
 ;; Every time latex-table-wizard--parse-table is evaluated, the values
 ;; of the variables below are set:
 (defvar latex-table-wizard--current-col-delims nil)
@@ -236,6 +223,9 @@ If the current environment is one that is mapped to something in
 ;; plists.                                                           ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+;; The reason we cannot use TeX-find-macro-end is that, among other
+;; things, that command is not comment sensitive: it will incorrectly
+;; mark the end of a macro in the midle of a comment
 (defun latex-table-wizard--end-of-macro (&optional name)
   "If looking at unescaped macro named NAME, go to its end.
 
@@ -246,7 +236,7 @@ If NAME is nil, skip any LaTeX macro that point is looking at."
       ;; this trouble is to deal with problematic arguments to the
       ;; environment being macro like:
       ;;    \begin{tabular}{@{} llllllll}
-      (when (and (latex-table-wizard--unescaped-p)
+      (when (and (not (TeX-escaped-p))
                  (looking-at macro-re))
         (goto-char (match-end 1))         ; goto end of name
         ;; now this is tricky: different arguments can be separated by
@@ -259,6 +249,9 @@ If NAME is nil, skip any LaTeX macro that point is looking at."
           (forward-sexp)
           (when (looking-at "[[:space:]]*\\(%.*\n\\)?[[:space:]]*")
             (goto-char (match-end 0))))
+        ;; now we have moved too far ahead looking for arguments,
+        ;; let's jump back all the whitespace
+        (skip-syntax-backward " ")
         (point)))))
 
 (defun latex-table-wizard--skip-stuff (limit)
@@ -321,27 +314,27 @@ argument."
         (end-of-row))
     (while (and (< (point) lim) (not end))
       (cond ((and (looking-at "%")
-                  (latex-table-wizard--unescaped-p))
+                  (not (TeX-escaped-p)))
              ;; the first step is important to avoid being fooled by
              ;; column or row delimiters in comments!
              (forward-line))
             ((looking-at-p "[[:space:]]+")
              (skip-syntax-forward " "))
-            ((and (latex-table-wizard--unescaped-p)
+            ((and (not (TeX-escaped-p))
                   (looking-at-p "\\\\begin\\({\\|\\[\\)"))
              (forward-char 1)
              (LaTeX-find-matching-end))
-            ((and (latex-table-wizard--unescaped-p)
+            ((and (not (TeX-escaped-p))
                   (looking-at latex-table-wizard--macro-re))
              (goto-char (latex-table-wizard--end-of-macro
                          (match-string-no-properties 1))))
             ((and (looking-at col-re)
-                  (latex-table-wizard--unescaped-p))
+                  (not (TeX-escaped-p)))
              ;; a column delimiter: bingo
              (setq end (point-marker))
              (goto-char (match-end 0)))
             ((and (looking-at row-re)
-                  (latex-table-wizard--unescaped-p))
+                  (not (TeX-escaped-p)))
              ;; a row delimiter: bingo
              (let ((after-del (save-excursion
                                 (goto-char (match-end 0))
@@ -398,9 +391,6 @@ Each value is an integer, S and E are markers."
          (env-beg (save-excursion
                     (LaTeX-find-matching-begin)
                     (goto-char (latex-table-wizard--end-of-macro))
-                    ;; now we have moved too far ahead looking for
-                    ;; arguments, let's jump back all the whitespace
-                    (skip-syntax-backward " ")
                     (point-marker)))
          (env-end (save-excursion
                     (LaTeX-find-matching-end)
