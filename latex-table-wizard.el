@@ -247,8 +247,8 @@ If NAME is nil, skip any LaTeX macro that point is looking at."
         ;; skips stuff that is not a LaTeX argument group.
         (while (looking-at-p "{\\|\\[")
           (forward-sexp)
-          (when (looking-at "[[:space:]]*\\(%.*\n\\)?[[:space:]]*")
-            (goto-char (match-end 0))))
+          (TeX-comment-forward 1)
+          (skip-syntax-forward " "))
         ;; now we have moved too far ahead looking for arguments,
         ;; let's jump back all the whitespace
         (skip-syntax-backward " ")
@@ -313,12 +313,8 @@ argument."
         (end)
         (end-of-row))
     (while (and (< (point) lim) (not end))
-      (cond ((and (looking-at "%")
-                  (not (TeX-escaped-p)))
-             ;; the first step is important to avoid being fooled by
-             ;; column or row delimiters in comments!
-             (forward-line))
-            ((looking-at-p "[[:space:]]+")
+      (TeX-comment-forward 1)
+      (cond ((looking-at-p "[[:space:]]+")
              (skip-syntax-forward " "))
             ((and (not (TeX-escaped-p))
                   (looking-at-p "\\\\begin\\({\\|\\[\\)"))
@@ -412,9 +408,7 @@ Each value is an integer, S and E are markers."
             (forward-char 1)
           (insert " "))
         (while (< (point) env-end)
-          (when (looking-at-p "[[:space:]]*\\($\\|%\\)")
-            ;; nothing interesting left between point and eol
-            (forward-line))
+          (TeX-comment-forward 1)
           (let ((data (latex-table-wizard--get-cell-boundaries
                        col-re row-re env-end)))
             (push `( :column ,col
