@@ -1,0 +1,14 @@
+-*- mode: org -*-
+
+* 1.1.0 <2022-12-18 Sun>
+
+** Four interactive commands added
+
++ latex-table-wizard-align-left
++ latex-table-wizard-align-right
++ latex-table-wizard-center
++ latex-table-wizard-compress
+
+Each of these commands performs one of the transformations that
+latex-table-wizard-align cycles through.  Unlike this command, these
+new ones are not exposed through the transient interface.

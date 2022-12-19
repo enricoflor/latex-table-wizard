@@ -105,31 +105,6 @@
 
 ;;; Regular expressions and configuration options
 
-;; this rx expression matches what can separate different arguments of
-;; a (La)TeX macro: whitespace and comments
-(rx-define latex-table-wizard--blank-rx
-  (seq (* space) (? (seq "%" (* not-newline))) "\n"
-       (* (seq (* space) "%" (* not-newline) "\n"))
-       (* space)))
-
-(defconst latex-table-wizard--macro-args-re
-  (rx (seq (? latex-table-wizard--blank-rx)
-           (* (seq "{" (*? anything) "}"
-                   latex-table-wizard--blank-rx))
-           (* (seq "[" (*? anything) "]"
-                   latex-table-wizard--blank-rx))
-           (* (seq "{" (*? anything) "}"
-                   latex-table-wizard--blank-rx))))
-  "Regexp matching argument part of LaTeX macros.")
-
-(defconst latex-table-wizard--macro-re
-  (concat "\\\\"
-          (rx (group-n 1 (one-or-more alnum)))
-          latex-table-wizard--macro-args-re)
-  "Regexp matching unescaped LaTeX macros.
-
-Capture group 1 matches the name of the macro.")
-
 (defcustom latex-table-wizard-column-delimiters '("&")
   "List of strings that are column delimiters if unescaped."
   :type '(repeat string))
@@ -223,36 +198,50 @@ If the current environment is one that is mapped to something in
 ;; plists.                                                           ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+;; this rx expression matches what can separate different arguments of
+;; a (La)TeX macro: whitespace and comments
+(rx-define latex-table-wizard--blank-rx
+  (seq (* space)
+       (? (seq "%" (* not-newline)))
+       (? "\n")
+       (* (seq (* space) "%" (* not-newline) "\n"))
+       (* space)))
+
 ;; The reason we cannot use TeX-find-macro-end is that, among other
 ;; things, that command is not comment sensitive: it will incorrectly
 ;; mark the end of a macro in the midle of a comment
-(defun latex-table-wizard--end-of-macro (&optional name)
+(defun latex-table-wizard--goto-end-of-macro (&optional name)
   "If looking at unescaped macro named NAME, go to its end.
 
 If NAME is nil, skip any LaTeX macro that point is looking at."
-  (save-excursion
-    (let* ((n (concat "\\(?1:" (or name (rx (one-or-more alnum))) "\\)"))
-           (macro-re (concat "\\\\" n latex-table-wizard--macro-args-re)))
-      ;; this trouble is to deal with problematic arguments to the
-      ;; environment being macro like:
-      ;;    \begin{tabular}{@{} llllllll}
-      (when (and (not (TeX-escaped-p))
-                 (looking-at macro-re))
-        (goto-char (match-end 1))         ; goto end of name
-        ;; now this is tricky: different arguments can be separated by
-        ;; whitespace and one line break.  We have to take this into
-        ;; account but also not be fooled by comments!  Actually
-        ;; forward-sexp is smart enough already to skip comments, but
-        ;; it skips too much: even two line breaks and of course it
-        ;; skips stuff that is not a LaTeX argument group.
-        (while (looking-at-p "{\\|\\[")
-          (forward-sexp)
-          (TeX-comment-forward 1)
-          (skip-syntax-forward " "))
-        ;; now we have moved too far ahead looking for arguments,
-        ;; let's jump back all the whitespace
-        (skip-syntax-backward " ")
-        (point)))))
+  (let* ((n (concat "\\(?1:" (or name (rx (+ (not (any blank "\n")))))
+                    "\\)"))
+         (macro-re (concat "\\\\" n
+                           (rx (seq latex-table-wizard--blank-rx
+                                    (group-n 2 (? (or (literal "{")
+                                                      (literal "[")))))))))
+    ;; (match-end 1) will the end of the name of the macro,
+    ;; (match-beginning 2) the opening brace of bracket of the first
+    ;; argument (if there is one).
+
+    ;; this trouble is to deal with problematic arguments to the
+    ;; environment being macro like: \begin{tabular}{@{} llllllll}
+    (when (and (not (TeX-escaped-p))
+               (looking-at macro-re))
+      (goto-char (match-beginning 2))
+      ;; now if indeed there is no "{" or "[" it means that there
+      ;; are no arguments and we are done, so we should just go back
+      ;; to the end of the name (we might be already there but maybe not!)
+      (if (not (looking-at-p "{\\|\\["))
+          (goto-char (match-end 1))
+        (let ((arg-end))
+          (while (looking-at-p "{\\|\\[")
+            (forward-sexp)
+            (setq arg-end (point))
+            (when (looking-at (rx latex-table-wizard--blank-rx))
+              (goto-char (match-end 0))))
+          ;; let's go back in case we skipped whitespace
+          (goto-char arg-end))))))
 
 (defun latex-table-wizard--skip-stuff (limit)
   "Skip comments, blank space and hline macros.
@@ -277,9 +266,8 @@ Stop the skipping at LIMIT (a buffer position or a marker)."
                                 "\\|")))
               (throw 'stop nil)))
           (ignore-errors
-            (goto-char (latex-table-wizard--end-of-macro
-                        (regexp-opt
-                         latex-table-wizard--current-hline-macros))))
+            (latex-table-wizard--goto-end-of-macro
+             (regexp-opt latex-table-wizard--current-hline-macros)))
           (when (looking-at "\n\\|%")
             (forward-line)
             (setq new-start-of-line (point)))
@@ -313,24 +301,17 @@ argument."
         (end)
         (end-of-row))
     (while (and (< (point) lim) (not end))
-      (TeX-comment-forward 1)
-      (cond ((looking-at-p "[[:space:]]+")
-             (skip-syntax-forward " "))
-            ((and (not (TeX-escaped-p))
-                  (looking-at-p "\\\\begin\\({\\|\\[\\)"))
-             (forward-char 1)
-             (LaTeX-find-matching-end))
-            ((and (not (TeX-escaped-p))
-                  (looking-at latex-table-wizard--macro-re))
-             (goto-char (latex-table-wizard--end-of-macro
-                         (match-string-no-properties 1))))
-            ((and (looking-at col-re)
-                  (not (TeX-escaped-p)))
+      (cond ((looking-at-p "[[:space:]]+%?")
+             (TeX-comment-forward 1))
+            ((TeX-escaped-p)
+             ;; whatever we are looking at is escaped so we just go
+             ;; one step forward
+             (forward-char 1))
+            ((looking-at col-re)
              ;; a column delimiter: bingo
              (setq end (point-marker))
              (goto-char (match-end 0)))
-            ((and (looking-at row-re)
-                  (not (TeX-escaped-p)))
+            ((looking-at row-re)
              ;; a row delimiter: bingo
              (let ((after-del (save-excursion
                                 (goto-char (match-end 0))
@@ -342,8 +323,20 @@ argument."
                (setq end end-of-previous-cell
                      end-of-row t)
                (latex-table-wizard--skip-stuff lim)))
+            ((looking-at-p (rx (seq "\\begin"
+                                    latex-table-wizard--blank-rx
+                                    (or (literal "{") (literal "[")))))
+             (forward-char 1)
+             (LaTeX-find-matching-end))
+            ((looking-at (rx (seq (literal "\\")
+                                  (group-n 1 (+ (not (any blank
+                                                          "\n"))))
+                                  latex-table-wizard--blank-rx
+                                  (or (literal "{") (literal "[")))))
+             (latex-table-wizard--goto-end-of-macro
+              (match-string-no-properties 1)))
             (t
-             ;; nothing special, just go one step forward
+             ;; the above should have
              (forward-char 1))))
     `(,beg ,end ,end-of-row)))
 
@@ -378,59 +371,69 @@ form
 
     (:column C :row R :start S :end E).
 
-Each value is an integer, S and E are markers."
-  (latex-table-wizard--set-current-values)
+Each value is an integer, S and E are markers.
+
+If point is inside the table but between two cells, relocate it
+to the one that precedes point."
   (let* ((cells-list '())
          (col 0)
          (row 0)
-         (env-name (LaTeX-current-environment))
          (env-beg (save-excursion
                     (LaTeX-find-matching-begin)
-                    (goto-char (latex-table-wizard--end-of-macro))
+                    (latex-table-wizard--goto-end-of-macro)
                     (point-marker)))
          (env-end (save-excursion
                     (LaTeX-find-matching-end)
-                    (re-search-backward (concat "\\\\end{" env-name) nil t)
+                    (TeX-search-unescaped
+                     (rx (seq "\\end"
+                              latex-table-wizard--blank-rx
+                              (literal "{")))
+                     'backward t env-beg t)
                     (forward-char -1)
                     (point-marker)))
          (hash (secure-hash 'sha256
-                            (buffer-substring-no-properties env-beg env-end)))
-         (col-re (string-join latex-table-wizard--current-col-delims "\\|"))
-         (row-re (string-join latex-table-wizard--current-row-delims "\\|")))
-    (if (and (equal `(,env-beg . ,env-end) (nth 0 latex-table-wizard--parse))
-             (equal hash (nth 1 latex-table-wizard--parse)))
-        (nth 2 latex-table-wizard--parse)
-      (save-excursion
-        (goto-char env-beg)
-        ;; we need to make some space between the end of of the \begin
-        ;; macro and the start of the (0,0) cell
-        (if (looking-at-p "[[:space:]]")
-            (forward-char 1)
-          (insert " "))
-        (while (< (point) env-end)
+                            (buffer-substring-no-properties env-beg env-end))))
+    (save-excursion (goto-char env-beg)
+                    (latex-table-wizard--set-current-values))
+    (let ((col-re (string-join latex-table-wizard--current-col-delims "\\|"))
+          (row-re (string-join latex-table-wizard--current-row-delims "\\|")))
+      (if (and (equal `(,env-beg . ,env-end) (nth 0 latex-table-wizard--parse))
+               (equal hash (nth 1 latex-table-wizard--parse)))
+          (nth 2 latex-table-wizard--parse)
+        (save-excursion
+          (goto-char env-beg)
+          ;; we need to make some space between the end of of the \begin
+          ;; macro and the start of the (0,0) cell
+          (if (looking-at-p "[[:space:]]")
+              (forward-char 1)
+            (insert " "))
           (TeX-comment-forward 1)
-          (let ((data (latex-table-wizard--get-cell-boundaries
-                       col-re row-re env-end)))
-            (push `( :column ,col
-                     :row ,row
-                     :start ,(nth 0 data)
-                     :end ,(if (nth 1 data) (nth 1 data) env-end))
-                  cells-list)
-            (if (nth 2 data)         ; this was the last cell in the row
-                (setq row (1+ row)
-                      col 0)
-              (setq col (1+ col)))
-            ;; if we just hit the end of a row and the next thing coming
-            ;; is another row delimiter, skip that one (because you are
-            ;; not in a cell)
-            (while (and (nth 2 data)
-                        (save-excursion
-                          (skip-syntax-forward " ")
-                          (looking-at-p row-re)))
-              (re-search-forward row-re nil t)))))
-      (setq latex-table-wizard--parse
-            `((,env-beg . ,env-end) ,hash ,cells-list))
-      cells-list)))
+          (while (looking-at-p "[[:space:]]*%")
+            (TeX-comment-forward 1))
+          (skip-syntax-backward " ")
+          (while (< (point) env-end)
+            (let ((data (latex-table-wizard--get-cell-boundaries
+                         col-re row-re env-end)))
+              (push `( :column ,col
+                       :row ,row
+                       :start ,(nth 0 data)
+                       :end ,(if (nth 1 data) (nth 1 data) env-end))
+                    cells-list)
+              (if (nth 2 data)         ; this was the last cell in the row
+                  (setq row (1+ row)
+                        col 0)
+                (setq col (1+ col)))
+              ;; if we just hit the end of a row and the next thing coming
+              ;; is another row delimiter, skip that one (because you are
+              ;; not in a cell)
+              (while (and (nth 2 data)
+                          (save-excursion
+                            (skip-syntax-forward " ")
+                            (looking-at-p row-re)))
+                (re-search-forward row-re nil t)))))
+        (setq latex-table-wizard--parse
+              `((,env-beg . ,env-end) ,hash ,cells-list))
+        cells-list))))
 
 (defun latex-table-wizard--get-cell-pos (table prop-val1
                                                &optional prop-val2)
@@ -494,39 +497,6 @@ F, C precedes D and so on; and if DIR is either \\='next\\=' or
                                     (apply #'< rows))))))
       (sort thing (lambda (x y) (< (plist-get x prop)
                                    (plist-get y prop)))))))
-
-(defun latex-table-wizard--point-on-regexp-p (regexp
-                                              &optional capture-group
-                                              search-beginning-pos)
-  "Return non-nil if point is on a substring matched by REGEXP.
-
-If CAPTURE-GROUP is non-nil, limit the condition to the substring
-matched by the corresponding capture group.  If CAPTURE-GROUP is
-nil, it defaults to 0.
-
-What is returned is a list of the form
-
-    (S B E)
-
-where S is the substring matched, and B and E are the buffer
-position corresponding to the beginning and the end of such
-substring.
-
-Start the search from SEARCH-BEGINNING-POS (a buffer position or
-marker): if this argument is nil, start the search from the
-beginning of the available portion of the buffer."
-  (let ((position (point))
-        (group (or capture-group 0))
-        (search-b (or search-beginning-pos (point-min))))
-    (save-match-data
-      (save-excursion
-        (goto-char search-b)
-        (catch 'found
-          (while (re-search-forward regexp nil t)
-            (when (<= (match-beginning group) position (match-end group))
-              (throw 'found (list (match-string-no-properties group)
-                                  (match-beginning group)
-                                  (match-end group))))))))))
 
 
 
@@ -622,7 +592,8 @@ The overlay has a non-nil value for the name property
 POS is a buffer position or a marker.
 
 If POS is not in a cell in TABLE, it means it's between two
-cells: return the closest one."
+cells: return the closest one after having moved point to its
+beginning.."
   (let ((candidate (car (seq-filter
                          (lambda (x) (<= (plist-get x :start)
                                          pos
@@ -632,16 +603,24 @@ cells: return the closest one."
     (cond (candidate
            candidate)
           ((< pos (car ends))
-           (latex-table-wizard--get-cell-pos table '(:column . 0) '(:row . 0)))
+           (latex-table-wizard--get-cell-pos table
+                                             '(:column . 0) '(:row . 0)))
           ((> pos (cdr ends))
            (car (seq-filter
                  (lambda (x) (= (plist-get x :end) (cdr ends)))
                  table)))
-          (t (goto-char (apply #'max
-                               (mapcar (lambda (x) (plist-get x :start))
-                                       (seq-filter
-                                        (lambda (x) (< (plist-get x :end) pos))
-                                        table))))))))
+          (t
+           (let* ((end-pos
+                   (thread-last
+                     table
+                     (seq-filter (lambda (x) (< (plist-get x :end) pos)))
+                     (mapcar (lambda (x) (plist-get x :end)))
+                     (apply #'max)))
+                  (final (seq-find (lambda (x) (= end-pos
+                                                  (plist-get x :end)))
+                                   table)))
+             (goto-char (plist-get final :start))
+             final)))))
 
 (defun latex-table-wizard--get-thing (thing &optional table)
   "Return THING point is in.
@@ -683,14 +662,6 @@ direction DIR to take.
 If SAME-LINE is non-nil, never leave current column or row."
   (unless (ignore-errors (save-excursion (LaTeX-find-matching-begin)))
     (user-error "Not in a LaTeX environment"))
-  (when-let ((macro-at-point
-              (latex-table-wizard--point-on-regexp-p
-               latex-table-wizard--macro-re
-               0 (line-beginning-position))))
-    (cond ((string-prefix-p "\\begin" (nth 0 macro-at-point))
-           (goto-char (nth 1 macro-at-point)))
-          ((string-prefix-p "\\end" (nth 0 macro-at-point))
-           (goto-char (nth 2 macro-at-point)))))
   (let* ((message-log-max 0)
          (cells (latex-table-wizard--parse-table))
          (curr (latex-table-wizard--get-thing 'cell cells))
@@ -763,17 +734,19 @@ TYPE is either \\='column\\=' or \\='row\\='."
                       line2 `(,prop . ,(plist-get x prop)))))
           (latex-table-wizard--swap-cells x other))))))
 
-(defun latex-table-wizard--swap-adjacent-line (dir &optional type)
+(defun latex-table-wizard--swap-adjacent-line (dir type)
   "Swap current thing of type TYPE with the one in direction DIR.
 DIR is either \\='forward\\=', \\='backward\\=', \\='next\\=' or
 \\='previous\\='.
 TYPE is either \\='cell\\=', \\='column\\=' or \\='row\\='."
   (latex-table-wizard--remove-overlays)
-  (cond ((eq type 'cell) (latex-table-wizard-select-deselect-cell t))
+  (cond ((eq type 'cell) (latex-table-wizard-select-deselect-cell t t))
         ((memq dir '(forward backward))
          (latex-table-wizard-select-column t))
         ((memq dir '(previous next))
          (latex-table-wizard-select-row t)))
+  (setq latex-table-wizard--selection
+        (seq-uniq latex-table-wizard--selection))
   (latex-table-wizard--jump dir nil 1 t)
   (latex-table-wizard-swap)
   (let ((new-table (latex-table-wizard--parse-table)))
@@ -1148,14 +1121,16 @@ If NO-MESSAGE is non-nil, do not print anything in the echo area."
     (setq latex-table-wizard--selection
           (remove curr-cell latex-table-wizard--selection))))
 
-(defun latex-table-wizard-select-deselect-cell (&optional no-message)
+(defun latex-table-wizard-select-deselect-cell (&optional no-message select)
   "Add or remove cell at point to selection for swapping.
 
-If NO-MESSAGE is non-nil, do not print anything in the echo area."
+If NO-MESSAGE is non-nil, do not print anything in the echo area.
+
+If SELECT is non-nil, add the cell."
   (interactive)
   (let* ((table (latex-table-wizard--parse-table))
          (curr (latex-table-wizard--get-thing 'cell table)))
-    (if (member curr latex-table-wizard--selection)
+    (if (and (member curr latex-table-wizard--selection) (not select))
         (latex-table-wizard--deselect-cell)
       (latex-table-wizard--select-thing 'cell no-message)))
   (latex-table-wizard--echo-selection))
@@ -1286,7 +1261,8 @@ how the data stored in this variable and in
 of the transient prefix)."
   :type '(alist :key-type
                 (symbol :tag "Command:"
-                        :options ,(mapcar #'car latex-table-wizard-default-keys))
+                        :options ,(mapcar #'car
+                                          latex-table-wizard-default-keys))
                 :value-type string)
   :group 'latex-table-wizard)
 
@@ -1416,20 +1392,18 @@ Only remove them in current buffer."
     (remove-overlays (point-min) (point-max) 'tabl-outside-ol t)))
 
 (defun latex-table-wizard--get-out ()
-  "If point is on column or row delimiter, move to its beginning."
+  "If point is on an environment delimiting macro, move out.
+
+If it is on an \\='end\\=' macro, move to its end, otherwise to
+its beginning."
   (latex-table-wizard--set-current-values)
-  (when-let ((macro (latex-table-wizard--point-on-regexp-p
-                     (string-join
-                      `(,(regexp-opt
-                          (append latex-table-wizard--current-row-delims
-                                  latex-table-wizard--current-col-delims))
-                        ,latex-table-wizard--macro-re)
-                      "\\|")
-                     0 (line-beginning-position))))
-    (thread-last macro
-                 (nth 1)
-                 (1-)
-                 (goto-char))))
+  (when-let ((name (TeX-current-macro)))
+    (when (or (string-equal name "begin")
+              (string-equal name "end"))
+      (let ((boundaries (TeX-find-macro-boundaries)))
+        (if (string-equal name "end")
+            (goto-char (cdr boundaries))
+          (goto-char (car boundaries)))))))
 
 (define-minor-mode latex-table-wizard-mode
   "Minor mode for editing LaTeX table-like environments."
@@ -1452,12 +1426,21 @@ Only remove them in current buffer."
   "Edit table-like environment with a transient interface."
   (interactive)
   (when (region-active-p) (deactivate-mark))
-  (if latex-table-wizard-mode
-      (latex-table-wizard--make-prefix)
-    (latex-table-wizard-mode 1))
-  (latex-table-wizard--get-out)
-  (latex-table-wizard--hide-rest)
-  (call-interactively #'latex-table-wizard-prefix))
+  (let ((orig-point (point)))
+    (if latex-table-wizard-mode
+        (latex-table-wizard--make-prefix)
+      (latex-table-wizard-mode 1))
+    (latex-table-wizard--get-out)
+    (latex-table-wizard--hide-rest)
+    (let ((cell (latex-table-wizard--locate-point
+                 orig-point
+                 (latex-table-wizard--parse-table))))
+      (unless (<= (plist-get cell :start)
+                  orig-point
+                  (plist-get cell :end))
+        (goto-char (plist-get cell :start)))
+      (latex-table-wizard--hl-cells (list cell)))
+    (call-interactively #'latex-table-wizard-prefix)))
 
 ;;;###autoload
 (defun latex-table-wizard-customize ()

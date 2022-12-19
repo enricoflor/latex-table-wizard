@@ -1,0 +1,495 @@
+#+TITLE: LaTeX table wizard - Magic editing of LaTeX tables
+#+SUBTITLE: for version {{{version}}}
+#+AUTHOR: Enrico Flor
+#+EMAIL: enrico@eflor.net
+
+#+OPTIONS: ':t toc:t author:t email:t
+#+MACRO: version 1.0.0
+#+MACRO: updated last updated 18 December 2022
+
+    [[https://melpa.org/#/latex-table-wizard][file:https://melpa.org/packages/latex-table-wizard-badge.svg]]
+
+Copyright (C) 2022 Enrico Flor.
+
+     Permission is granted to copy, distribute and/or modify this
+     document under the terms of the GNU Free Documentation License,
+     Version 1.3 or any later version published by the Free Software
+     Foundation; with no Invariant Sections, with the Front-Cover Texts
+     being “A GNU Manual,” and with the Back-Cover Texts as in (a)
+     below.  A copy of the license is included in the section entitled
+     “GNU Free Documentation License.”
+
+     (a) The FSF’s Back-Cover Text is: “You have the freedom to copy and
+     modify this GNU manual.”
+* Introduction
+
+One of org-mode's magic features is its table editing capabilities.
+The goal of this package is to replicate that magic for LaTeX
+table(-like) environments.
+
+The way this is done is through a series of interactive commands that
+are exposed as *transient suffixes* through the transient interface
+invoked by the command ~latex-table-wizard~.  What this means is that
+by calling ~latex-table-wizard~ when point is in a table-like
+environment, you will be presented with a choice of keys that are
+bound to all the commands provided by this package.
+
+All these commands can of course be called through
+~execute-extended-command~, and you can bind any key you want to them.
+See [[#custom-transient-prefix]] for how to change the default bindings
+offered by the transient prefix.
+
+An important feature of LaTeX-table-wizard is that it *tries to be
+smart*: for instance, it should not be fooled if the current
+table-like environments contains *embedded tables* (that is, other
+tabular environments inside of its cells).  The table is parsed so
+that these big cells are treated like any other cell.
+
+For example, if you call ~latex-table-wizard~ when point is outside of
+the embedded ~tabular~ environment, LaTeX-table-wizard will behave as if
+it was in any other 3x3 table, and the embedded table will be treated
+just as any other cell content.
+
+#+begin_src LaTeX
+\begin{tabular}{lll}
+  \begin{tabular}{ll}
+    a & b \\
+    c & d
+  \end{tabular}
+  & █B2 & C2 \\\hline
+ A1 & B1 & C1 \\
+ A0 & B0 \makecell{longer & nested cell} & C0
+\end{tabular}
+#+end_src
+
+Of course you can call ~latex-table-wizard~ with point inside of the
+embedded table, in which case any command you use will operate only on
+the embedded table.
+
+For most of this document we will assume the table-like environment
+has the standard LaTeX2e syntax, but you can define your own types of
+table-like environments (more on this [[#user-defined-envs][below]]).
+
+* Available commands
+For now, we will assume a standard LaTeX syntax for tabular
+environments, where ~&~ delimits columns and ~\\~ rows (see [[#user-defined-envs][below]] for
+info as to how to specify additional environments).
+
+Whenever we say "current" we mean "at point".
+
+** Start editing
+Just call ~latex-table-wizard~ when point is inside of table-like
+environment.
+
+This commands actually activates the non-global minor mode
+~latex-table-wizard-mode~.  If you intend to use this package's commands
+without the transient interface brought up by ~latex-table-wizard~,
+activate this minor mode to have the interactive functions loaded.
+** Relative motion commands
+
+These commands move point N cells to the right, left, down, and up.  N
+is passed as a prefix argument, and if it's not passed, it defaults
+to 1.
+
+| Command                    | Default key |
+|----------------------------+-------------|
+| ~latex-table-wizard-right~   | ~f~           |
+| ~latex-table-wizard-left~    | ~b~           |
+| ~latex-table-wizard-down~    | ~n~           |
+| ~latex-table-wizard-up~      | ~p~           |
+
+With just one of these you can get anywhere you want in the table:
+
+#+begin_src LaTeX
+\begin{tabular}{lll}
+  A0 & B0 & C0 \\\hline
+  A1 & B1 & C1 \\
+  A2 & B2 & C2
+\end{tabular}
+#+end_src
+
+This is because these commands try to Do What You Mean if there is no
+suitable cell to move to:
+
++ Point on ~C0~, ~latex-table-wizard-right~ ⇒ point on ~A1~
++ Point on ~A0~, ~latex-table-wizard-left~ ⇒ point on ~C2~
++ Point on ~C2~, ~latex-table-wizard-down~ ⇒ point on ~A0~
++ Point on ~B0~, ~latex-table-wizard-up~ ⇒ point on ~A2~
+
+and so on.
+
+These four commands accept a positive integer passed as a prefix
+argument that determines how many steps (i.e. how many cells) the
+movement will consist of.  By default, you can pass this argument
+from the transient interface of ~latex-table-wizard~ with the key ~u~
+(bound to ~universal-argument~).
+** Absolute motion commands
+
+| Command                              | Default key | Move to...                    |
+|--------------------------------------+-------------+-------------------------------|
+| ~latex-table-wizard-beginning-of-cell~ | ~a~           | end of current cell           |
+| ~latex-table-wizard-end-of-cell~       | ~e~           | beginning of current cell     |
+| ~latex-table-wizard-beginning-of-row~  | ~B~           | leftmost cell in current row  |
+| ~latex-table-wizard-end-of-row~        | ~F~           | rightmost cell in current row |
+| ~latex-table-wizard-bottom~            | ~N~           | bottom cell in current column |
+| ~latex-table-wizard-top~               | ~P~           | top cell in current column    |
+** Mark, kill and insert commands
+| Command                          | Default key |                                            |
+|----------------------------------+-------------+--------------------------------------------|
+| ~latex-table-wizard-mark-cell~     | ~m c~         | mark current cell                          |
+| ~latex-table-wizard-insert-column~ | ~i c~         | insert empty column to the right           |
+| ~latex-table-wizard-insert-row~    | ~i r~         | insert row below                           |
+| ~latex-table-wizard-kill-column~   | ~k c~         | add content of current column to kill ring |
+| ~latex-table-wizard-kill-row~      | ~k r~         | add content of current row to kill ring    |
+| ~exchange-point-and-mark~          | ~x~           |                                            |
+** Swap adjacent fields
+
+| Command                              | Default key | Swap current...                  |
+|--------------------------------------+-------------+----------------------------------|
+| ~latex-table-wizard-swap-cell-right~   | ~C-f~         | cell with the one to the right   |
+| ~latex-table-wizard-swap-cell-left~    | ~C-b~         | cell with the one to the left    |
+| ~latex-table-wizard-swap-cell-down~    | ~C-n~         | cell with the one below          |
+| ~latex-table-wizard-swap-cell-up~      | ~C-p~         | cell with the one above          |
+| ~latex-table-wizard-swap-column-right~ | ~M-f~         | column with the one to the right |
+| ~latex-table-wizard-swap-column-left~  | ~M-b~         | column with the one to the left  |
+| ~latex-table-wizard-swap-row-down~     | ~M-n~         | row with the one below           |
+| ~latex-table-wizard-swap-row-up~       | ~M-p~         | row with the one above           |
+
+For these commands, think of the cells and columns as circular: if
+there is no item in the direction given, the target is the one on the
+opposite end of the current cell.  So for example:
+
+#+begin_src LaTeX
+\begin{tabular}{lll}
+  A0 & B0    & C0 \\\hline
+  A1 & B1 & C1 \\
+  A2 & B2 & C2
+\end{tabular}
+#+end_src
+
+This is because these commands try to Do What You Mean if there is no
+suitable cell to move to:
+
+Point on ~C0~, ~latex-table-wizard-swap-cell-right~
+  ⇒
+#+begin_src LaTeX
+\begin{tabular}{lll}
+ C0 & B0    & A0 \\\hline
+  A1 & B1 & C1 \\
+  A2 & B2 & C2
+\end{tabular}
+#+end_src
+
+Point on ~B0~, ~latex-table-wizard-swap-row-up~
+  ⇒
+#+begin_src LaTeX
+\begin{tabular}{lll}
+ A2 & B2 & C2 \\\hline
+  A1 & B1 & C1 \\
+ A0 & B0 & C0
+\end{tabular}
+#+end_src
+
+Point on ~A1~, ~latex-table-wizard-swap-column-right~
+  ⇒
+#+begin_src LaTeX
+\begin{tabular}{lll}
+ B0 & A0 & C0 \\\hline
+ B1 & A1 & C1 \\
+ B2 & A2 & C2
+\end{tabular}
+#+end_src
+
+** Swap arbitrary fields
+To swap arbitrary fields one must first *select* something and then move
+point somewhere else and perform the swap.  Importantly, *selecting
+does not mean marking*: the mark is not even moved when selecting
+(however, by default the selected cell will receive the same kind of
+highlighting the loaded theme defines for the active region, but this
+is a purely graphical equivalence).  "Selecting", for the purposes of
+LaTeX-table-wizard only means storing a cell, a line or a row to be
+swapped with another.
+
+The simplest case is one in which the current cell, column or row are
+selected:
+
+| Command                                 | Default key | Select current...    |
+|-----------------------------------------+-------------+----------------------|
+| ~latex-table-wizard-select-deselect-cell~ | ~SPC~         | select/deselect cell |
+| ~latex-table-wizard-select-column~        | ~c~           | select column        |
+| ~latex-table-wizard-select-row~           | ~r~           | deselect row         |
+| ~latex-table-wizard-deselect-all~         | ~d~           | deselect all         |
+
+The first command, ~latex-table-wizard-select-deselect-cell~ toggles the
+status of the current cell as being selected or not.
+
+Once things are selected, you move point somewhere else in the table
+(with the above mentioned motion commands), and then:
+
+| ~latex-table-wizard-swap~ | ~s~ | swap selection and current thing |
+
+What is swapped depends on what is selected: if the selection was only
+a cell, then that cell and the current one are swapped.  If it was (a
+potentially discontinuous segment of) a column or a row, then that
+selection is swapped with the current column or row or the
+corresponding portion thereof.  If you selected multiple cell that are
+not part of the same column or row, the swap won't happen
+(LaTeX-table-wizard doesn't know what you want it to do in that case).
+
+** Format the table
+
+The only command to format the table is ~latex-table-wizard-align~.  The
+behavior of this command is cyclic, in the sense that calling it
+repeatedly causes the table to cycle through four types of formatting:
+left aligned, centered, right aligned and compressed.  The latter
+state is actually not one of alignment (that is, the column separators
+are not vertically aligned): it just means that all the extra space at
+the beginning and end of each cell is collapsed into one.
+
+| Command                             | Default key |
+|-------------------------------------+-------------|
+| ~latex-table-wizard-align~            | ~TAB~         |
+
+The following five tables illustrate the effect of calling
+~latex-table-wizard-align~ repeatedly.
+
+This is the original cell:
+
+#+begin_src LaTeX
+\begin{tabular}{lll}
+ A2 longer cell & B2  & C2  \\\hline
+  A1 & B1 & C1 \\ A0  & B0 \makecell{longer & nested cell}     & C0
+\end{tabular}
+#+end_src
+
+left aligned:
+
+#+begin_src LaTeX
+\begin{tabular}{lll}
+ A2 longer cell & B2                                 & C2 \\\hline
+ A1             & B1                                 & C1 \\
+ A0             & B0 \makecell{longer & nested cell} & C0
+\end{tabular}
+#+end_src
+
+centered:
+
+#+begin_src LaTeX
+\begin{tabular}{lll}
+ A2 longer cell &                 B2                 & C2 \\\hline
+       A1       &                 B1                 & C1 \\
+       A0       & B0 \makecell{longer & nested cell} & C0
+\end{tabular}
+#+end_src
+
+right aligned:
+
+#+begin_src LaTeX
+\begin{tabular}{lll}
+ A2 longer cell &                                 B2 & C2 \\\hline
+             A1 &                                 B1 & C1 \\
+             A0 & B0 \makecell{longer & nested cell} & C0
+\end{tabular}
+#+end_src
+
+compressed:
+
+#+begin_src LaTeX
+\begin{tabular}{lll}
+ A2 longer cell & B2 & C2 \\\hline
+ A1 & B1 & C1 \\
+ A0 & B0 \makecell{longer & nested cell} & C0
+\end{tabular}
+#+end_src
+
+As you can see, ~latex-table-wizard-align~ also forces every row of the
+table to start on its own line.
+
+As always, this alignment command tries to be smart and not be fooled
+by column or row delimiters embedded in a cell.
+
+Beside ~latex-table-wizard-align~ with its cycling behavior, four
+commands are defined (but not exposed by the transient interface),
+each of which just performs one of these transformations.  These are:
+
++ ~latex-table-wizard-align-left~
++ ~latex-table-wizard-align-right~
++ ~latex-table-wizard-center~
++ ~latex-table-wizard-compress~
+
+** Extra commands in the transient prefix
+The transient interfaces invoked by ~latex-table-wizard~ also exposes
+some other commands that are not defined by this package but are
+useful for its usage.  These are:
+
+| Command                 | Default key |
+|-------------------------+-------------|
+| ~toggle-truncate-lines~   | ~t~           |
+| ~undo~                    | ~/~           |
+| ~exchange-point-and-mark~ | ~x~           |
+| ~universal-argument~      | ~u~           |
+| ~transient-quit-one~      | ~RET~         |
+
+
+* Known issues
+
+** Empty cells in single-column tables
+This package handles empty cells (that is, cells without any text in
+them except perhaps comments) well.  The only exception is in tables
+with a single column.  The problem is that a buffer substring like
+~\\ \\~ is not parsed as a cell. This is normally not a problem, but if
+the table has only one column then that substring could be meant to be
+an empty or blank cell.
+
+A way to avoid this problem may be defining a LaTeX macro that does
+nothing, and use it in the cell you intend to be empty so that the
+parser sees some text.
+
+#+begin_src latex
+\newcommand{\blk}{}
+#+end_src
+
+So instead of ~\\ \\~ we will have ~\\ \blk{} \\~.
+* Customization
+
+To quickly access all customizations pertinent to LaTeX-table-wizard
+through the Customize interface, call ~latex-table-wizard-customize~.
+
+** Customize transient prefix
+:PROPERTIES:
+:CUSTOM_ID: custom-transient-prefix
+:END:
+To change the default key bindings, you need to provide change the
+value of the alist ~latex-table-wizard-transient-keys~.  The easiest and
+most convenient way to do it is through ~latex-table-wizard-customize~.
+
+Each cons cell in this alist maps a command to a key description
+string (the kind of strings that the macro ~kbd~ takes as arguments).
+
+For example, these three cons cells are members of the default value of
+~latex-table-wizard-transient-keys~:
+
+#+begin_src emacs-lisp
+(undo . "//")
+(latex-table-wizard-swap-cell-right . "C-f")
+(latex-table-wizard-insert-row . "i r")
+#+end_src
+
+** Define rules for new environments
+:PROPERTIES:
+:CUSTOM_ID: user-defined-envs
+:END:
+Remember the default values used for parsing table environments:
+
+#+begin_src emacs-lisp
+(defcustom latex-table-wizard-column-delimiters '("&")
+  "List of strings that are column delimiters if unescaped."
+  :type '(repeat string)
+  :group 'latex-table-wizard)
+
+(defcustom latex-table-wizard-row-delimiters '("\\\\\\\\")
+  "List of strings that are row delimiters if unescaped."
+  :type '(repeat string)
+  :group 'latex-table-wizard)
+
+(defcustom latex-table-wizard-hline-macros '("cline"
+                                             "vline"
+                                             "midrule"
+                                             "hline"
+                                             "toprule"
+                                             "bottomrule")
+  "Name of macros that draw horizontal lines.
+
+Each member of this list is a string that would be between the
+\"\\\" and the arguments."
+  :type '(repeat string)
+  :group 'latex-table-wizard)
+#+end_src
+
+ LaTeX-table-wizard will always presume the table you want operate on
+ has a syntax specified like this.  But suppose you use different
+ environments with non-standard syntax: suppose you define a
+ table-like environment of your choice, let's call it ~mytable~, that
+ uses ~!ROW~ and ~!COL~ instead of ~&~ and ~\\~ as delimiters, and a macro
+ ~\horizontal~ for horizontal lines.  When you are in a ~mytable~
+ environments, you want LaTeX-table-wizard to adapt to this new
+ syntax.
+
+ All you need to do add an appropriate cons cell to the
+ ~latex-table-wizard-new-environments-alist~ association list, mapping
+ the name of the environment, as a string, to a property list
+ specifying the values.  Here is this variable's ~defcustom~ expression:
+
+ #+begin_src emacs-lisp
+(defcustom latex-table-wizard-new-environments-alist nil
+  "Alist mapping environment names to property lists.
+
+The environment name is a string, for example \"foo\" for an
+environment like
+
+  \\begin{foo}
+      ...
+  \\end{foo}
+
+The cdr of each mapping is a property list with three keys:
+
+   :col
+   :row
+   :lines
+
+The values for :col and :row are two lists of strings.
+
+The value for :lines is a list of strings just like is the case
+for `latex-table-wizard-hline-macros', each of which is the name
+of a macro that inserts some horizontal line.  For a macro
+\"\\foo{}\", use string \"foo\"."
+  :type '(alist :key-type (string :tag "Name of the environment:")
+                :value-type (plist :key-type symbol
+                                   :options (:col :row :lines)
+                                   :value-type (repeat string)))
+
+  :group 'latex-table-wizard)
+ #+end_src
+
+You can add the new syntax for the ~mytable~ environment through the
+Customize interface, which will present you with the correct values to
+set, or you can just add a cons cell of your writing to the alist:
+
+ #+begin_src emacs-lisp
+(add-to-list 'latex-table-wizard-new-environments-alist
+             '("mytable" . (:col ("!COL") :row ("!ROW") :lines ("horizontal"))))
+ #+end_src
+
+Each of the values in the plist is a list of strings: this way you can
+define environments that can use more than one type of column
+separator.  Importantly, the strings in the ~:lines~ list are *names of
+LaTeX* macros, which means that they should not start with the
+backslash and you should not add any argument to them.  In the example
+above a buffer substring like =\horizontal{1}= will be interpreted as a
+hline macro if in a ~mytable~ environment.
+
+** Customizing faces
+
+ Calling ~latex-table-wizard~ by default causes the portions of the
+ buffer before and after the table at point to be "grayed out", so
+ that you can clearly focus on the table.  If you don't want this to
+ happen, set the value of the variable ~latex-table-wizard-no-focus~ to
+ ~t~.
+
+ If instead you want effect to be different than the default (which is
+ applying a foreground of color ~gray40~), change the value of the face
+ ~latex-table-wizard-background~.
+
+ By default, when you move around the table and select objects from it
+ the relevant portions of the table are highlighted.  If you don't
+ want this to happen, set the value of the variable
+ ~latex-table-wizard-no-highlight~ to ~t~.
+
+ If instead you want the highlighting to be done differently than the
+ default (which is applying a background of the same color as the
+ loaded theme defines for the active region), change the value of the
+ face ~latex-table-wizard-highlight~.
+
+ The easiest and most convenient way to set these variables,
+ especially the two faces, is through the Customize interface, which
+ you can access quickly by calling ~latex-table-wizard-customize~.

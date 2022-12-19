@@ -460,6 +460,21 @@ table to start on its own line.
 As always, this alignment command tries to be smart and not be fooled
 by column or row delimiters embedded in a cell.
 
+Beside @code{latex-table-wizard-align} with its cycling behavior, four
+commands are defined (but not exposed by the transient interface),
+each of which just performs one of these transformations.  These are:
+
+@itemize
+@item
+@code{latex-table-wizard-align-left}
+@item
+@code{latex-table-wizard-align-right}
+@item
+@code{latex-table-wizard-center}
+@item
+@code{latex-table-wizard-compress}
+@end itemize
+
 @node Extra commands in the transient prefix
 @section Extra commands in the transient prefix
 
