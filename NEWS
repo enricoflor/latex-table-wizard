@@ -1,7 +1,16 @@
 -*- mode: org -*-
 
+* 1.2.0 <2022-12-20 Tue>
+** New user option: latex-table-wizard-allow-detached-args
+Same as texmathp-allow-detached-args and
+reftex-allow-detached-macro-args, but for the purposes of parsing the
+table (especially determining where the table content starts).  By
+default, nil.
+** New user option: latex-table-wizard-warn-about-detached-args
+If t (default value) and latex-table-wizard-allow-detached-args is
+nil, the user is warned about suspect cases of detachment of a macro
+and its arguments when the table is parsed.
 * 1.1.0 <2022-12-18 Sun>
-
 ** Four interactive commands added
 
 + latex-table-wizard-align-left

@@ -5,7 +5,7 @@
 ;; Author: Enrico Flor <enrico@eflor.net>
 ;; Maintainer: Enrico Flor <enrico@eflor.net>
 ;; URL: https://github.com/enricoflor/latex-table-wizard
-;; Version: 1.1.0
+;; Version: 1.2.0
 ;; Keywords: convenience
 
 ;; Package-Requires: ((emacs "27.1") (auctex "12.1") (transient "0.3.7"))
@@ -105,6 +105,45 @@
 
 ;;; Regular expressions and configuration options
 
+(defcustom latex-table-wizard-allow-detached-args nil
+  "If t, allow arguments of macros to be detached in parsing.
+
+This means that if non-nil, this package will parse argument
+groups (strings in brackets or in braces) as arguments of the
+macro even if they are separated by whitespace, one line break,
+and comments.  This conforms to how LaTeX interprets them.
+
+However, doing this may cause some troubles if you happen to have
+a string in braces at the start of the first
+cell (position (0,0)): this is because if there is no blank line
+between that cell and the table opening \\='\\begin\\=' macro
+with its arguments, that string which should be in the first cell
+may end up being parsed as an additional argument to the
+\\='\\begin\\=' macro.
+
+You avoid this danger if you set this variable to nil, but then
+you should never have whitespace between the macro and its
+arguments and between the arguments themselves."
+  :type 'boolean)
+
+(defcustom latex-table-wizard-warn-about-detached-args t
+  "If t, warn about suspect cases of non-allowed detached arguments.
+
+The warning will be echoed in the echo area any time that, while
+parsing the table, cases in which a LaTeX macro and its
+arguments, or two arguments of the same LaTeX macro might be
+separated from its arguments by whitespace or comment are found.
+
+Since the parser doesn't quite know what string preceded by an
+unescaped backslash is a valid LaTeX macro and whether it accepts
+what number of arguments, false positives are likely to be found.
+
+If `latex-table-wizard-allow-detached-args' is non-nil, detached
+arguments are allowed and so no warning will ever be issued
+regardless of the value of this variable."
+  :type 'boolean
+  :link '(variable-link latex-table-wizard-allow-detached-args))
+
 (defcustom latex-table-wizard-column-delimiters '("&")
   "List of strings that are column delimiters if unescaped."
   :type '(repeat string))
@@ -150,7 +189,8 @@ of a macro that inserts some horizontal line.  For a macro
   :type '(alist :key-type (string :tag "Name of the environment:")
                 :value-type (plist :key-type symbol
                                    :options (:col :row :lines)
-                                   :value-type (repeat string))))
+                                   :value-type (repeat string)))
+  :link '(variable-link latex-table-wizard-hline-macros))
 
 ;; Every time latex-table-wizard--parse-table is evaluated, the values
 ;; of the variables below are set:
@@ -199,13 +239,36 @@ If the current environment is one that is mapped to something in
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; this rx expression matches what can separate different arguments of
-;; a (La)TeX macro: whitespace and comments
-(rx-define latex-table-wizard--blank-rx
-  (seq (* space)
-       (? (seq "%" (* not-newline)))
-       (? "\n")
-       (* (seq (* space) "%" (* not-newline) "\n"))
-       (* space)))
+;; a (La)TeX macro: whitespace and comments.  If
+;; latex-table-wizard-allow-detached-args is nil, this rx
+;; expression will effectively never be used.
+(defconst latex-table-wizard--blank-detach-arg-re
+  (rx (seq (* space)
+           (? (seq "%" (* not-newline)))
+           (? "\n")
+           (* (seq (* space) "%" (* not-newline) "\n"))
+           (* space)))
+  "Regexp matching what can separate a macro from its arguments.")
+
+(defvar latex-table-wizard--detached nil)
+
+(defun latex-table-wizard--warn-detached ()
+  "Warn the user if suspected detached macros are found in table.
+
+A macro is detached if there is any blank string separating the
+macro from its arguments or one argument from the next.
+
+Don't do anything if
+`latex-table-wizard-allow-detached-args' is non-nil,
+because it means that the user is aware of this and is taking the
+measures needed for the parser not to be confused."
+  (unless latex-table-wizard-allow-detached-args
+    (let ((message-log-max 0))
+      (message (concat "Warning: suspect detached macro found.\n"
+                       "If the table isn't parsed correctly,"
+                       "try to not separate arguments from macro,\n"
+                       "or set latex-table-wizard-allow-detached-args"
+                       "to t.")))))
 
 ;; The reason we cannot use TeX-find-macro-end is that, among other
 ;; things, that command is not comment sensitive: it will incorrectly
@@ -213,35 +276,45 @@ If the current environment is one that is mapped to something in
 (defun latex-table-wizard--goto-end-of-macro (&optional name)
   "If looking at unescaped macro named NAME, go to its end.
 
-If NAME is nil, skip any LaTeX macro that point is looking at."
-  (let* ((n (concat "\\(?1:" (or name (rx (+ (not (any blank "\n")))))
-                    "\\)"))
-         (macro-re (concat "\\\\" n
-                           (rx (seq latex-table-wizard--blank-rx
-                                    (group-n 2 (? (or (literal "{")
-                                                      (literal "[")))))))))
+If NAME is nil, skip any LaTeX macro that point is looking at.
+
+Call `latex-table-wizard--warn-detached' if the macro is
+separated from its arguments, or any two successive arguments are
+separated from each other."
+  (let* ((bl-rx (if latex-table-wizard-allow-detached-args
+                    latex-table-wizard--blank-detach-arg-re
+                  ""))
+         (n (or name (rx (+ (not (any blank "\n" "{" "["))))))
+         (macro-re (concat "\\(?1:\\\\" n "\\)" bl-rx
+                           "\\(?2:\\({\\|\\[\\)?\\)")))
     ;; (match-end 1) will the end of the name of the macro,
     ;; (match-beginning 2) the opening brace of bracket of the first
     ;; argument (if there is one).
-
     ;; this trouble is to deal with problematic arguments to the
     ;; environment being macro like: \begin{tabular}{@{} llllllll}
-    (when (and (not (TeX-escaped-p))
-               (looking-at macro-re))
+    (when (and (not (TeX-escaped-p)) (looking-at macro-re))
       (goto-char (match-beginning 2))
-      ;; now if indeed there is no "{" or "[" it means that there
-      ;; are no arguments and we are done, so we should just go back
-      ;; to the end of the name (we might be already there but maybe not!)
-      (if (not (looking-at-p "{\\|\\["))
-          (goto-char (match-end 1))
-        (let ((arg-end))
-          (while (looking-at-p "{\\|\\[")
-            (forward-sexp)
-            (setq arg-end (point))
-            (when (looking-at (rx latex-table-wizard--blank-rx))
-              (goto-char (match-end 0))))
-          ;; let's go back in case we skipped whitespace
-          (goto-char arg-end))))))
+      ;; now if indeed there is no "{" or "[" it means that there are
+      ;; no arguments and we are done, so we should just go back to
+      ;; the end of the name (we might be already there but maybe
+      ;; not!), but if we are looking at a "{}" or "[" then we should
+      ;; try to skip all the arguments
+      (if (looking-at-p "{\\|\\[")
+          (save-match-data
+            (let ((arg-end))
+              (while (looking-at-p "{\\|\\[")
+                (forward-sexp)
+                (setq arg-end (point))
+                (when (and latex-table-wizard-allow-detached-args
+                           (looking-at latex-table-wizard--blank-detach-arg-re))
+                  (goto-char (match-end 0))
+                  (unless (looking-at-p "{\\|\\[")
+                    (setq latex-table-wizard--detached t))))
+              ;; let's go back in case we skipped whitespace
+              (goto-char arg-end)))
+        (goto-char (match-end 1))
+        (unless (looking-at-p "{\\|\\[")
+          (setq latex-table-wizard--detached t))))))
 
 (defun latex-table-wizard--skip-stuff (limit)
   "Skip comments, blank space and hline macros.
@@ -296,7 +369,10 @@ delimiters respectively.
 LIMIT is a buffer position at which the parsing stops, and
 defaults to `point-max' if nothing else is passed as the
 argument."
-  (let ((lim (or limit (point-max)))
+  (let ((bl-rx (if latex-table-wizard-allow-detached-args
+                   latex-table-wizard--blank-detach-arg-re
+                 ""))
+        (lim (or limit (point-max)))
         (beg (point-marker))
         (end)
         (end-of-row))
@@ -323,16 +399,20 @@ argument."
                (setq end end-of-previous-cell
                      end-of-row t)
                (latex-table-wizard--skip-stuff lim)))
-            ((looking-at-p (rx (seq "\\begin"
-                                    latex-table-wizard--blank-rx
-                                    (or (literal "{") (literal "[")))))
+            ((looking-at-p (eval `(rx (seq "\\begin"
+                                           ,bl-rx
+                                           (or (literal "{")
+                                               (literal "["))))))
              (forward-char 1)
+             (unless (looking-at-p "begin[{\\|(]")
+               (setq latex-table-wizard--detached t))
              (LaTeX-find-matching-end))
-            ((looking-at (rx (seq (literal "\\")
-                                  (group-n 1 (+ (not (any blank
-                                                          "\n"))))
-                                  latex-table-wizard--blank-rx
-                                  (or (literal "{") (literal "[")))))
+            ((looking-at "{")
+             (forward-sexp))
+            ((looking-at (eval `(rx (seq (literal "\\")
+                                         (group-n 1 (+ (not (any blank "\n"))))
+                                         ,bl-rx
+                                         (or (literal "{") (literal "["))))))
              (latex-table-wizard--goto-end-of-macro
               (match-string-no-properties 1)))
             (t
@@ -375,7 +455,11 @@ Each value is an integer, S and E are markers.
 
 If point is inside the table but between two cells, relocate it
 to the one that precedes point."
-  (let* ((cells-list '())
+  (setq latex-table-wizard--detached nil)
+  (let* ((bl-rx (if latex-table-wizard-allow-detached-args
+                    latex-table-wizard--blank-detach-arg-re
+                  ""))
+         (cells-list '())
          (col 0)
          (row 0)
          (env-beg (save-excursion
@@ -384,20 +468,23 @@ to the one that precedes point."
                     (point-marker)))
          (env-end (save-excursion
                     (LaTeX-find-matching-end)
-                    (TeX-search-unescaped
-                     (rx (seq "\\end"
-                              latex-table-wizard--blank-rx
-                              (literal "{")))
-                     'backward t env-beg t)
-                    (forward-char -1)
+                    (TeX-search-unescaped (concat "\\\\end" bl-rx "{")
+                                          'backward t env-beg t)
+                    (re-search-backward "[^[:space:]]" nil t)
+                    (while (TeX-in-comment)
+                      (TeX-search-unescaped "%" 'backward t env-beg t)
+                      (re-search-backward "[^[:space:]]" nil t))
+                    (unless (eolp) (forward-char 1))
                     (point-marker)))
          (hash (secure-hash 'sha256
-                            (buffer-substring-no-properties env-beg env-end))))
+                            (buffer-substring-no-properties env-beg
+                                                            env-end))))
     (save-excursion (goto-char env-beg)
                     (latex-table-wizard--set-current-values))
     (let ((col-re (string-join latex-table-wizard--current-col-delims "\\|"))
           (row-re (string-join latex-table-wizard--current-row-delims "\\|")))
-      (if (and (equal `(,env-beg . ,env-end) (nth 0 latex-table-wizard--parse))
+      (if (and (equal `(,env-beg . ,env-end)
+                      (nth 0 latex-table-wizard--parse))
                (equal hash (nth 1 latex-table-wizard--parse)))
           (nth 2 latex-table-wizard--parse)
         (save-excursion
@@ -433,6 +520,8 @@ to the one that precedes point."
                 (re-search-forward row-re nil t)))))
         (setq latex-table-wizard--parse
               `((,env-beg . ,env-end) ,hash ,cells-list))
+        (when latex-table-wizard--detached
+          (latex-table-wizard--warn-detached))
         cells-list))))
 
 (defun latex-table-wizard--get-cell-pos (table prop-val1

@@ -12,6 +12,9 @@ File: latex-table-wizard.info,  Node: Top,  Next: Introduction,  Up: (dir)
 LaTeX table wizard - Magic editing of LaTeX tables
 **************************************************
 
+file:https://melpa.org/packages/latex-table-wizard-badge.svg
+(https://melpa.org/#/latex-table-wizard)
+
    Copyright (C) 2022 Enrico Flor.
 
    Permission is granted to copy, distribute and/or modify this document
@@ -53,6 +56,7 @@ Customization
 * Customize transient prefix::
 * Define rules for new environments::
 * Customizing faces::
+* Detached arguments::
 
 
 
@@ -444,6 +448,7 @@ through the Customize interface, call ‘latex-table-wizard-customize’.
 * Customize transient prefix::
 * Define rules for new environments::
 * Customizing faces::
+* Detached arguments::
 
 
 File: latex-table-wizard.info,  Node: Customize transient prefix,  Next: Define rules for new environments,  Up: Customization
@@ -554,7 +559,7 @@ buffer substring like ‘\horizontal{1}’ will be interpreted as a hline
 macro if in a ‘mytable’ environment.
 
 
-File: latex-table-wizard.info,  Node: Customizing faces,  Prev: Define rules for new environments,  Up: Customization
+File: latex-table-wizard.info,  Node: Customizing faces,  Next: Detached arguments,  Prev: Define rules for new environments,  Up: Customization
 
 4.3 Customizing faces
 =====================
@@ -582,26 +587,71 @@ theme defines for the active region), change the value of the face
 especially the two faces, is through the Customize interface, which you
 can access quickly by calling ‘latex-table-wizard-customize’.
 
+
+File: latex-table-wizard.info,  Node: Detached arguments,  Prev: Customizing faces,  Up: Customization
+
+4.4 Detached arguments
+======================
+
+Optional or obligatory arguments can be separated from the macro or from
+each other in LaTeX.  Suppose there is a macro ‘\macro’ that takes one
+optional and one obligatory argument.  Now, LaTeX can deal with all of
+the following forms:
+
+   This fact matters for this package for several reasons but the most
+important is that, in parsing the table, we need to know where the table
+content starts.  Suppose you defined a tabular like environment ‘myenv’
+whose ‘\begin’ macro accepts an optional argument.  Is ‘[abc]’ below the
+optional argument of the environment or content of the first cell?
+
+   By default, ‘latex-table-wizard’ will consider ‘[abc]’ part of the
+first cell in the example above, because it does not recognize the
+possibility for the arguments of LaTeX macros to be detached.  If you
+want to change this default, set the value of
+‘latex-table-wizard-allow-detached-args’ to t.
+
+   If ‘latex-table-wizard-allow-detached-args’ is set to t (that is, if
+detached arguments are allowed), you should not have in your table
+strings between braces or brackets after a macro without them be
+separated by a blank line, unless these strings between braces or
+brackets are in fact the arguments of the macro.  This is not a problem
+for LaTeX, because it knows what is a valid macro and what isn’t, and
+how many arguments a macro accepts: ‘latex-table-wizard’ however does
+not know it and it could get confused while parsing, and thus get the
+start of the first cell wrong.
+
+   Good practice is to never separate arguments from each other or from
+the LaTeX macro: if you respect this good practice, you will never need
+to be concerned with this customization.
+
+   If detached arguments are “disallowed” (that is,
+‘latex-table-wizard-allow-detached-args’ is nil as per default), you
+have the option to be warned when ‘latex-table-wizard’ finds cases of
+suspect detached arguments.  The warning is just a message in the echo
+area right after the table is parsed.  If you want this, set the value
+of ‘latex-table-wizard-warn-about-detached-args’ to t.
+
 
 
 Tag Table:
 Node: Top97
-Node: Introduction1510
-Node: Available commands3651
-Node: Start editing4363
-Node: Relative motion commands4878
-Node: Absolute motion commands6414
-Node: Mark kill and insert commands7330
-Node: Swap adjacent fields8201
-Node: Swap arbitrary fields10257
-Node: Format the table12343
-Node: Extra commands in the transient prefix15033
-Node: Known issues15710
-Node: Empty cells in single-column tables15904
-Node: Customization16684
-Node: Customize transient prefix17048
-Node: Define rules for new environments17837
-Node: Customizing faces21689
+Node: Introduction1533
+Node: Available commands3674
+Node: Start editing4386
+Node: Relative motion commands4901
+Node: Absolute motion commands6437
+Node: Mark kill and insert commands7353
+Node: Swap adjacent fields8224
+Node: Swap arbitrary fields10280
+Node: Format the table12366
+Node: Extra commands in the transient prefix15056
+Node: Known issues15733
+Node: Empty cells in single-column tables15927
+Node: Customization16707
+Node: Customize transient prefix17094
+Node: Define rules for new environments17883
+Node: Customizing faces21735
+Node: Detached arguments23103
 
 End Tag Table
 
