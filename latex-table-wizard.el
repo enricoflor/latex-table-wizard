@@ -1,11 +1,11 @@
 ;;; latex-table-wizard.el --- Magic editing of LaTeX tables  -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2022 Enrico Flor
+;; Copyright (C) 2022, 2023 Enrico Flor
 
 ;; Author: Enrico Flor <enrico@eflor.net>
 ;; Maintainer: Enrico Flor <enrico@eflor.net>
 ;; URL: https://github.com/enricoflor/latex-table-wizard
-;; Version: 1.2.0
+;; Version: 1.2.1
 ;; Keywords: convenience
 
 ;; Package-Requires: ((emacs "27.1") (auctex "12.1") (transient "0.3.7"))
@@ -663,14 +663,15 @@ given, a value is retrieved with
 
 The overlay has a non-nil value for the name property
 \\='table-inside-ol\\='."
-  (let ((ols '()))
-    (dolist (x list-of-cells)
-      (push (make-overlay (plist-get x :start)
-                          (plist-get x :end))
-            ols))
-    (dolist (x ols)
-      (overlay-put x 'tabl-inside-ol t)
-      (overlay-put x 'face 'latex-table-wizard-highlight))))
+  (unless latex-table-wizard-no-highlight
+    (let ((ols '()))
+      (dolist (x list-of-cells)
+        (push (make-overlay (plist-get x :start)
+                            (plist-get x :end))
+              ols))
+      (dolist (x ols)
+        (overlay-put x 'tabl-inside-ol t)
+        (overlay-put x 'face 'latex-table-wizard-highlight)))))
 
 (defvar-local latex-table-wizard--selection nil
   "Current selection, a list of cell objects.")
@@ -1462,14 +1463,15 @@ all defined faces."
 
 (defun latex-table-wizard--hide-rest ()
   "Apply face `latex-table-wizard-background' outside of table."
-  (latex-table-wizard--parse-table)
-  (let* ((tab-b (car (car latex-table-wizard--parse)))
-         (tab-e (1+ (cdr (car latex-table-wizard--parse))))
-         (ols `(,(make-overlay (point-min) tab-b)
-                ,(make-overlay tab-e (point-max)))))
-    (dolist (x ols)
-      (overlay-put x 'tabl-outside-ol t)
-      (overlay-put x 'face 'latex-table-wizard-background))))
+  (unless latex-table-wizard-no-focus
+    (latex-table-wizard--parse-table)
+    (let* ((tab-b (car (car latex-table-wizard--parse)))
+           (tab-e (1+ (cdr (car latex-table-wizard--parse))))
+           (ols `(,(make-overlay (point-min) tab-b)
+                  ,(make-overlay tab-e (point-max)))))
+      (dolist (x ols)
+        (overlay-put x 'tabl-outside-ol t)
+        (overlay-put x 'face 'latex-table-wizard-background)))))
 
 (defun latex-table-wizard--cleanup ()
   "Remove all overlays created by \\='latex-table-wizard\\='.
@@ -1528,8 +1530,8 @@ its beginning."
                   orig-point
                   (plist-get cell :end))
         (goto-char (plist-get cell :start)))
-      (latex-table-wizard--hl-cells (list cell)))
-    (call-interactively #'latex-table-wizard-prefix)))
+      (latex-table-wizard--hl-cells (list cell))))
+  (call-interactively #'latex-table-wizard-prefix))
 
 ;;;###autoload
 (defun latex-table-wizard-customize ()
