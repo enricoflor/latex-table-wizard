@@ -100,7 +100,7 @@
 
 (defgroup latex-table-wizard nil
   "LaTeX table wizard configuration options."
-  :prefix "latex-table-wizard"
+  :prefix "latex-table-wizard-"
   :group 'convenience)
 
 ;;; Regular expressions and configuration options
@@ -879,6 +879,20 @@ Don't print any message if NO-MESSAGE is non-nil."
 
 ;;; Interactive functions
 
+(defun latex-table-wizard--get-out ()
+  "If point is on an environment delimiting macro, move out.
+
+If it is on an \\='end\\=' macro, move to its end, otherwise to
+its beginning."
+  (latex-table-wizard--set-current-values)
+  (when-let ((name (TeX-current-macro)))
+    (when (or (string-equal name "begin")
+              (string-equal name "end"))
+      (let ((boundaries (TeX-find-macro-boundaries)))
+        (if (string-equal name "end")
+            (goto-char (cdr boundaries))
+          (goto-char (car boundaries)))))))
+
 (defvar latex-table-wizard--align-status '(left center right compress))
 
 (defun latex-table-wizard-align (&optional mode)
@@ -896,6 +910,7 @@ There are five possible values for MODE:
     alignment)
 - \\='nil\\=': cycle through the four above modes."
   (interactive)
+  (latex-table-wizard--setup)
   (latex-table-wizard--remove-overlays)
   (save-excursion
     (let ((message-log-max 0)
@@ -959,6 +974,7 @@ There are five possible values for MODE:
 
 Make every row start on a new line."
   (interactive)
+  (latex-table-wizard--setup)
   (latex-table-wizard-align 'left))
 
 (defun latex-table-wizard-align-right ()
@@ -966,6 +982,7 @@ Make every row start on a new line."
 
 Make every row start on a new line."
   (interactive)
+  (latex-table-wizard--setup)
   (latex-table-wizard-align 'right))
 
 (defun latex-table-wizard-center ()
@@ -973,6 +990,7 @@ Make every row start on a new line."
 
 Make every row start on a new line."
   (interactive)
+  (latex-table-wizard--setup)
   (latex-table-wizard-align 'center))
 
 (defun latex-table-wizard-compress ()
@@ -980,6 +998,7 @@ Make every row start on a new line."
 
 Make every row start on a new line."
   (interactive)
+  (latex-table-wizard--setup)
   (latex-table-wizard-align 'compress))
 
 (defun latex-table-wizard-right (&optional n)
@@ -1033,32 +1052,38 @@ of the column to the left of where point is."
 (defun latex-table-wizard-end-of-row ()
   "Move point to the rightmost cell in current row."
   (interactive)
+  (latex-table-wizard--setup)
   (latex-table-wizard--jump 'forward t))
 
 (defun latex-table-wizard-beginning-of-row ()
   "Move point to the leftmost cell in current row."
   (interactive)
+  (latex-table-wizard--setup)
   (latex-table-wizard--jump 'backward t))
 
 (defun latex-table-wizard-bottom ()
   "Move point to the bottom cell in current column."
   (interactive)
+  (latex-table-wizard--setup)
   (latex-table-wizard--jump 'next t))
 
 (defun latex-table-wizard-top ()
   "Move point to the top cell in current column."
   (interactive)
+  (latex-table-wizard--setup)
   (latex-table-wizard--jump 'previous t))
 
 (defun latex-table-wizard-end-of-cell ()
   "Move point to the end of the current cell."
   (interactive)
+  (latex-table-wizard--setup)
   (let ((cell (latex-table-wizard--get-thing 'cell)))
     (goto-char (plist-get cell :end))))
 
 (defun latex-table-wizard-beginning-of-cell ()
   "Move point to the beginning of the current cell."
   (interactive)
+  (latex-table-wizard--setup)
   (let ((cell (latex-table-wizard--get-thing 'cell)))
     (goto-char (plist-get cell :start))))
 
@@ -1068,6 +1093,7 @@ of the column to the left of where point is."
 TABLE is a list of cell plists.  If it is nil, evaluate
 `latex-table-wizard--parse-table' to get a value."
   (interactive)
+  (latex-table-wizard--setup)
   (let* ((table (latex-table-wizard--parse-table))
          (cell (latex-table-wizard--get-thing 'cell table)))
     (push-mark (plist-get cell :start) nil t)
@@ -1076,46 +1102,55 @@ TABLE is a list of cell plists.  If it is nil, evaluate
 (defun latex-table-wizard-swap-column-right ()
   "Swap current column and the one to the right."
   (interactive)
+  (latex-table-wizard--setup)
   (latex-table-wizard--swap-adjacent-line 'forward 'column))
 
 (defun latex-table-wizard-swap-column-left ()
   "Swap current column and the one to the left."
   (interactive)
+  (latex-table-wizard--setup)
   (latex-table-wizard--swap-adjacent-line 'backward 'column))
 
 (defun latex-table-wizard-swap-row-up ()
   "Swap current row and the one above."
   (interactive)
+  (latex-table-wizard--setup)
   (latex-table-wizard--swap-adjacent-line 'previous 'row))
 
 (defun latex-table-wizard-swap-row-down ()
   "Swap current row and the one below."
   (interactive)
+  (latex-table-wizard--setup)
   (latex-table-wizard--swap-adjacent-line 'next 'row))
 
 (defun latex-table-wizard-swap-cell-right ()
   "Swap content of current cell and the one to the right."
   (interactive)
+  (latex-table-wizard--setup)
   (latex-table-wizard--swap-adjacent-line 'forward 'cell))
 
 (defun latex-table-wizard-swap-cell-left ()
   "Swap content of current cell and the one to the left."
   (interactive)
+  (latex-table-wizard--setup)
   (latex-table-wizard--swap-adjacent-line 'backward 'cell))
 
 (defun latex-table-wizard-swap-cell-down ()
   "Swap content of current cell and the one below."
   (interactive)
+  (latex-table-wizard--setup)
   (latex-table-wizard--swap-adjacent-line 'next 'cell))
 
 (defun latex-table-wizard-swap-cell-up ()
   "Swap content of current cell and the one above."
   (interactive)
+  (latex-table-wizard--setup)
   (latex-table-wizard--swap-adjacent-line 'previous 'cell))
 
 (defun latex-table-wizard-insert-column ()
   "Insert empty column to the right of the one at point."
   (interactive)
+  (latex-table-wizard--setup)
   (save-excursion
     (let* ((table (latex-table-wizard--parse-table))
            (current-column (latex-table-wizard--get-thing 'column table))
@@ -1127,6 +1162,7 @@ TABLE is a list of cell plists.  If it is nil, evaluate
 (defun latex-table-wizard-kill-column ()
   "Kill content of column at point."
   (interactive)
+  (latex-table-wizard--setup)
   (save-excursion
     (let* ((table (latex-table-wizard--parse-table))
            (current-column (latex-table-wizard--get-thing 'column table))
@@ -1142,6 +1178,7 @@ TABLE is a list of cell plists.  If it is nil, evaluate
 (defun latex-table-wizard-insert-row ()
   "Insert empty row below the one at point."
   (interactive)
+  (latex-table-wizard--setup)
   (save-excursion
     (let* ((table (latex-table-wizard--parse-table))
            (end-table (cdr (latex-table-wizard--get-env-ends table)))
@@ -1162,6 +1199,7 @@ TABLE is a list of cell plists.  If it is nil, evaluate
 (defun latex-table-wizard-kill-row ()
   "Kill row at point."
   (interactive)
+  (latex-table-wizard--setup)
   (save-excursion
     (let* ((table (latex-table-wizard--parse-table))
            (b-e (latex-table-wizard--get-env-ends
@@ -1187,6 +1225,7 @@ TABLE is a list of cell plists.  If it is nil, evaluate
 
 If NO-MESSAGE is non-nil, do not print anything in the echo area."
   (interactive)
+  (latex-table-wizard--setup)
   (latex-table-wizard--select-thing 'row no-message)
   (latex-table-wizard--echo-selection))
 
@@ -1195,12 +1234,14 @@ If NO-MESSAGE is non-nil, do not print anything in the echo area."
 
 If NO-MESSAGE is non-nil, do not print anything in the echo area."
   (interactive)
+  (latex-table-wizard--setup)
   (latex-table-wizard--select-thing 'column no-message)
   (latex-table-wizard--echo-selection))
 
 (defun latex-table-wizard--deselect-cell ()
   "Remove cell at point from selection for swapping."
   (interactive)
+  (latex-table-wizard--setup)
   (let* ((table (latex-table-wizard--parse-table))
          (curr-cell (latex-table-wizard--get-thing 'cell table)))
     (setq latex-table-wizard--selection
@@ -1218,6 +1259,7 @@ If NO-MESSAGE is non-nil, do not print anything in the echo area.
 
 If SELECT is non-nil, add the cell."
   (interactive)
+  (latex-table-wizard--setup)
   (let* ((table (latex-table-wizard--parse-table))
          (curr (latex-table-wizard--get-thing 'cell table)))
     (if (and (member curr latex-table-wizard--selection) (not select))
@@ -1228,6 +1270,7 @@ If SELECT is non-nil, add the cell."
 (defun latex-table-wizard-deselect-all ()
   "Remove all selected cells from selection."
   (interactive)
+  (latex-table-wizard--setup)
   (latex-table-wizard--remove-overlays)
   (setq latex-table-wizard--selection nil)
   (latex-table-wizard--echo-selection))
@@ -1240,6 +1283,7 @@ Selection is the current value of
 cell, a column or a row, swap that with the cell, column or row
 at point.  If it is none of those object, return nil."
   (interactive)
+  (latex-table-wizard--setup)
   (let ((message-log-max 0))
     (unless latex-table-wizard--selection
       (message "Select thing to swap first"))
@@ -1271,7 +1315,7 @@ at point.  If it is none of those object, return nil."
 
 ;;; Transient
 
-(defconst latex-table-wizard-default-keys
+(defconst latex-table-wizard-default-transient-keys
   '((toggle-truncate-lines                   "t" "toggle truncate-lines")
     (latex-table-wizard-kill-row             "k r" "kill current row")
     (latex-table-wizard-kill-column          "k c" "kill current column")
@@ -1319,9 +1363,29 @@ description of the command.
 See Info node `(transient) Suffix Specifications' for more
 information.")
 
+(defconst latex-table-wizard--interactive-commands
+  (seq-concatenate
+   'list
+   '(latex-table-wizard-align-left
+     latex-table-wizard-align-right
+     latex-table-wizard-center
+     latex-table-wizard-compress
+     latex-table-wizard
+     latex-table-wizard-do)
+   (mapcar #'car latex-table-wizard-default-transient-keys))
+  "List of interactive commands for \\='latex-table-wizard\\='.
+
+This consists of the commands with a default binding for the
+transient prefix as specified in
+`latex-table-wizard-default-transient-keys', and adds to them
+those that are not there specified.
+
+The value of this list is used in `latex-table-wizard--setup' and
+`latex-table-wizard--cleanup'.")
+
 (defcustom latex-table-wizard-transient-keys
   (mapcar (lambda (x) (cons (nth 0 x) (nth 1 x)))
-          latex-table-wizard-default-keys)
+          latex-table-wizard-default-transient-keys)
   "Alist mapping command symbols to key description strings.
 
 Each time the value of this variable is changed, a new transient
@@ -1331,8 +1395,8 @@ values stored here.
 Each cons cell in this alist has the form (C . K), where C is the
 name of a command and C is a key description string (in the
 syntax of `kbd').  These, together with the description strings
-in `latex-table-wizard-default-keys', determine what the
-transient prefix will look like.
+in `latex-table-wizard-default-transient-keys', determine what
+the transient prefix will look like.
 
 The transient prefix will only have suffixes for the commands
 that are mapped to a key in this alist.  As usual with alists,
@@ -1347,12 +1411,12 @@ with other.
 See Info node `(transient) Suffix Specifications' for more
 information about how transient suffixes are defined (that is,
 how the data stored in this variable and in
-`latex-table-wizard-default-keys' contributes to the definition
-of the transient prefix)."
+`latex-table-wizard-default-transient-keys' contributes to the
+definition of the transient prefix)."
   :type '(alist :key-type
                 (symbol :tag "Command:"
                         :options ,(mapcar #'car
-                                          latex-table-wizard-default-keys))
+                                          latex-table-wizard-default-transient-keys))
                 :value-type string)
   :group 'latex-table-wizard)
 
@@ -1360,12 +1424,12 @@ of the transient prefix)."
   "Return a transient suffix for command SYMBOL.
 
 Retrieve the value of the description string from
-`latex-table-wizard-default-keys', and the value of the key
+`latex-table-wizard-default-transient-keys', and the value of the key
 description string from `latex-table-wizard-transient-keys'.
 
 See Info node `(transient) Suffix Specifications' for more
 information."
-  (let ((descr (nth 2 (assq symbol latex-table-wizard-default-keys)))
+  (let ((descr (nth 2 (assq symbol latex-table-wizard-default-transient-keys)))
         (custom-key (cdr (assq symbol latex-table-wizard-transient-keys))))
     (when custom-key
       `(,custom-key ,descr ,symbol :transient t))))
@@ -1417,6 +1481,45 @@ suffixes provided by evaluating `latex-table-wizard--make-suffix'."
         ,(latex-table-wizard--make-suffix 'latex-table-wizard-kill-row)
         ,(latex-table-wizard--make-suffix 'latex-table-wizard-mark-cell)
         ,(latex-table-wizard--make-suffix 'exchange-point-and-mark)]])))
+
+(defun latex-table-wizard--setup ()
+  "Prepare for an operation on the table.
+
+These preparations are only needed before the first of a chain of
+\\='latex-table-wizard\\=' commands is used, hence do nothing if
+`last-command' is in `latex-table-wizard--interactive-commands'.
+
+Preparations mean:
+
+  - deactivate the mark
+  - activate `latex-table-wizard-mode' if needed
+  - move the point inside the closest cell
+  - put the overlays if appropriate."
+  (unless (memq last-command latex-table-wizard--interactive-commands)
+    (when (region-active-p) (deactivate-mark))
+    (let ((orig-point (point)))
+      (if latex-table-wizard-mode
+          (latex-table-wizard--make-prefix)
+        (latex-table-wizard-mode 1))
+      (latex-table-wizard--get-out)
+      (latex-table-wizard--hide-rest)
+      (let ((cell (latex-table-wizard--locate-point
+                   orig-point
+                   (latex-table-wizard--parse-table))))
+        (unless (<= (plist-get cell :start)
+                    orig-point
+                    (plist-get cell :end))
+          (goto-char (plist-get cell :start)))
+        (latex-table-wizard--hl-cells (list cell))))))
+
+(defalias 'latex-table-wizard-do 'latex-table-wizard)
+
+;;;###autoload
+(defun latex-table-wizard ()
+  "Edit table-like environment with a transient interface."
+  (interactive)
+  (latex-table-wizard--setup)
+  (call-interactively #'latex-table-wizard-prefix))
 
 ;;; Aesthetics
 
@@ -1473,28 +1576,26 @@ all defined faces."
         (overlay-put x 'tabl-outside-ol t)
         (overlay-put x 'face 'latex-table-wizard-background)))))
 
-(defun latex-table-wizard--cleanup ()
+(defun latex-table-wizard--cleanup (&optional if-not-in-chain)
   "Remove all overlays created by \\='latex-table-wizard\\='.
 
-Only remove them in current buffer."
-  (setq latex-table-wizard--selection nil)
-  (when-let ((lims (car latex-table-wizard--parse)))
-    (remove-overlays (point-min) (point-max) 'tabl-inside-ol t)
-    (remove-overlays (point-min) (point-max) 'tabl-outside-ol t)))
+Only remove them in current buffer.
 
-(defun latex-table-wizard--get-out ()
-  "If point is on an environment delimiting macro, move out.
-
-If it is on an \\='end\\=' macro, move to its end, otherwise to
-its beginning."
-  (latex-table-wizard--set-current-values)
-  (when-let ((name (TeX-current-macro)))
-    (when (or (string-equal name "begin")
-              (string-equal name "end"))
-      (let ((boundaries (TeX-find-macro-boundaries)))
-        (if (string-equal name "end")
-            (goto-char (cdr boundaries))
-          (goto-char (car boundaries)))))))
+Remove unconditionally if IF-NOT-IN-CHAIN is nil, otherwise only
+remove if `last-command' but not `this-command' is in
+`latex-table-wizard--interactive-commands'."
+  (let ((exited (and (memq last-command
+                           latex-table-wizard--interactive-commands)
+                     (not (memq this-command
+                                latex-table-wizard--interactive-commands)))))
+    ;; now we want to remove stuff either if this function was called
+    ;; "unconditionally" of if it seems like we exited a chain of
+    ;; latex-table-wizard operations
+    (when (or (not if-not-in-chain) exited)
+      (setq latex-table-wizard--selection nil)
+      (when-let ((lims (car latex-table-wizard--parse)))
+        (remove-overlays (point-min) (point-max) 'tabl-inside-ol t)
+        (remove-overlays (point-min) (point-max) 'tabl-outside-ol t)))))
 
 (define-minor-mode latex-table-wizard-mode
   "Minor mode for editing LaTeX table-like environments."
@@ -1506,32 +1607,12 @@ its beginning."
       (progn
         (latex-table-wizard--make-prefix)
         (add-hook 'before-save-hook #'latex-table-wizard--cleanup nil t)
-        (add-hook 'transient-exit-hook #'latex-table-wizard--cleanup nil t))
+        (add-hook 'transient-exit-hook #'latex-table-wizard--cleanup nil t)
+        (add-hook 'pre-command-hook
+                  (apply-partially #'latex-table-wizard--cleanup t) t))
     (remove-hook 'before-save-hook #'latex-table-wizard--cleanup t)
-    (remove-hook 'transient-exit-hook #'latex-table-wizard--cleanup t)))
-
-(defalias 'latex-table-wizard-do 'latex-table-wizard)
-
-;;;###autoload
-(defun latex-table-wizard ()
-  "Edit table-like environment with a transient interface."
-  (interactive)
-  (when (region-active-p) (deactivate-mark))
-  (let ((orig-point (point)))
-    (if latex-table-wizard-mode
-        (latex-table-wizard--make-prefix)
-      (latex-table-wizard-mode 1))
-    (latex-table-wizard--get-out)
-    (latex-table-wizard--hide-rest)
-    (let ((cell (latex-table-wizard--locate-point
-                 orig-point
-                 (latex-table-wizard--parse-table))))
-      (unless (<= (plist-get cell :start)
-                  orig-point
-                  (plist-get cell :end))
-        (goto-char (plist-get cell :start)))
-      (latex-table-wizard--hl-cells (list cell))))
-  (call-interactively #'latex-table-wizard-prefix))
+    (remove-hook 'transient-exit-hook #'latex-table-wizard--cleanup t)
+    (remove-hook 'pre-command-hook #'latex-table-wizard--cleanup t)))
 
 ;;;###autoload
 (defun latex-table-wizard-customize ()
