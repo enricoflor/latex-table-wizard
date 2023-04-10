@@ -15,7 +15,7 @@ LaTeX table wizard - Magic editing of LaTeX tables
 file:https://melpa.org/packages/latex-table-wizard-badge.svg
 (https://melpa.org/#/latex-table-wizard)
 
-   Copyright (C) 2022 Enrico Flor.
+   Copyright (C) 2022, 2023 Enrico Flor.
 
    Permission is granted to copy, distribute and/or modify this document
 under the terms of the GNU Free Documentation License, Version 1.3 or
@@ -44,6 +44,7 @@ Available commands
 * Mark, kill and insert commands: Mark kill and insert commands.
 * Swap adjacent fields::
 * Swap arbitrary fields::
+* Comment out cells::
 * Format the table::
 * Extra commands in the transient prefix::
 
@@ -132,6 +133,7 @@ additional environments).
 * Mark, kill and insert commands: Mark kill and insert commands.
 * Swap adjacent fields::
 * Swap arbitrary fields::
+* Comment out cells::
 * Format the table::
 * Extra commands in the transient prefix::
 
@@ -190,6 +192,15 @@ movement will consist of.  By default, you can pass this argument from
 the transient interface of ‘latex-table-wizard’ with the key ‘u’ (bound
 to ‘universal-argument’).
 
+   These four commands also accept a second optional argument which, if
+non-nil, prevents the Do What You Mean behavior.  This is useful if you
+want to use these functions to write your own functions to edit tables.
+Given the table above, if point is on ‘A2’, both of the following
+expressions will return nil and won’t move point:
+
+     (latex-table-wizard-left 1 t)
+     (latex-table-wizard-down 1 t)
+
 
 File: latex-table-wizard.info,  Node: Absolute motion commands,  Next: Mark kill and insert commands,  Prev: Relative motion commands,  Up: Available commands
 
@@ -211,14 +222,21 @@ File: latex-table-wizard.info,  Node: Mark kill and insert commands,  Next: Swap
 2.4 Mark, kill and insert commands
 ==================================
 
-Command                              Default key
-------------------------------------------------------------------------------------------------
-‘latex-table-wizard-mark-cell’       ‘m c’         mark current cell
-‘latex-table-wizard-insert-column’   ‘i c’         insert empty column to the right
-‘latex-table-wizard-insert-row’      ‘i r’         insert row below
-‘latex-table-wizard-kill-column’     ‘k c’         add content of current column to kill ring
-‘latex-table-wizard-kill-row’        ‘k r’         add content of current row to kill ring
-‘exchange-point-and-mark’            ‘x’
+Command                                    Default key
+--------------------------------------------------------------------------------------------
+‘latex-table-wizard-mark-cell’             ‘m c’         mark current cell
+‘latex-table-wizard-insert-column’         ‘i c’         insert empty column to the right
+‘latex-table-wizard-insert-row’            ‘i r’         insert row below
+‘latex-table-wizard-kill-column-content’   ‘k c’         kill content of current column
+‘latex-table-wizard-kill-row-content’      ‘k r’         kill content of current row
+‘latex-table-wizard-delete-column’         ‘D c’         delete current column
+‘latex-table-wizard-delete-row’            ‘D r’         delete current row
+‘exchange-point-and-mark’                  ‘x’
+
+   ‘latex-table-wizard-delete-column’ and
+‘latex-table-wizard-delete-row’ modify the structure of the table (they
+actually remove the column/table, not just the content of the cells in
+them).
 
 
 File: latex-table-wizard.info,  Node: Swap adjacent fields,  Next: Swap arbitrary fields,  Prev: Mark kill and insert commands,  Up: Available commands
@@ -272,7 +290,7 @@ suitable cell to move to:
      \end{tabular}
 
 
-File: latex-table-wizard.info,  Node: Swap arbitrary fields,  Next: Format the table,  Prev: Swap adjacent fields,  Up: Available commands
+File: latex-table-wizard.info,  Node: Swap arbitrary fields,  Next: Comment out cells,  Prev: Swap adjacent fields,  Up: Available commands
 
 2.6 Swap arbitrary fields
 =========================
@@ -313,9 +331,28 @@ same column or row, the swap won’t happen (LaTeX-table-wizard doesn’t
 know what you want it to do in that case).
 
 
-File: latex-table-wizard.info,  Node: Format the table,  Next: Extra commands in the transient prefix,  Prev: Swap arbitrary fields,  Up: Available commands
+File: latex-table-wizard.info,  Node: Comment out cells,  Next: Format the table,  Prev: Swap arbitrary fields,  Up: Available commands
 
-2.7 Format the table
+2.7 Comment out cells
+=====================
+
+These two commands act on all the selected cells, if any is; otherwise,
+on the current cell point is on.
+
+Command                                    Default key   Select current...
+-------------------------------------------------------------------------------
+‘latex-table-wizard-comment-out-content’   ‘; c’         comment out content
+‘latex-table-wizard-comment-out’           ‘; ;’         comment out
+
+   The difference between the two is that one only comments out the
+content, preserving both delimiters around the cell; the other one
+actually modifies the structure of the table because for any cell that
+is commented out, one delimiter around it is commented out too.
+
+
+File: latex-table-wizard.info,  Node: Format the table,  Next: Extra commands in the transient prefix,  Prev: Comment out cells,  Up: Available commands
+
+2.8 Format the table
 ====================
 
 The only command to format the table is ‘latex-table-wizard-align’.  The
@@ -390,7 +427,7 @@ of which just performs one of these transformations.  These are:
 
 File: latex-table-wizard.info,  Node: Extra commands in the transient prefix,  Prev: Format the table,  Up: Available commands
 
-2.8 Extra commands in the transient prefix
+2.9 Extra commands in the transient prefix
 ==========================================
 
 The transient interfaces invoked by ‘latex-table-wizard’ also exposes
@@ -635,23 +672,24 @@ of ‘latex-table-wizard-warn-about-detached-args’ to t.
 
 Tag Table:
 Node: Top97
-Node: Introduction1533
-Node: Available commands3674
-Node: Start editing4386
-Node: Relative motion commands4901
-Node: Absolute motion commands6437
-Node: Mark kill and insert commands7353
-Node: Swap adjacent fields8224
-Node: Swap arbitrary fields10280
-Node: Format the table12366
-Node: Extra commands in the transient prefix15056
-Node: Known issues15733
-Node: Empty cells in single-column tables15927
-Node: Customization16707
-Node: Customize transient prefix17094
-Node: Define rules for new environments17883
-Node: Customizing faces21735
-Node: Detached arguments23103
+Node: Introduction1561
+Node: Available commands3702
+Node: Start editing4436
+Node: Relative motion commands4951
+Node: Absolute motion commands6897
+Node: Mark kill and insert commands7813
+Node: Swap adjacent fields9070
+Node: Swap arbitrary fields11126
+Node: Comment out cells13213
+Node: Format the table14092
+Node: Extra commands in the transient prefix16778
+Node: Known issues17455
+Node: Empty cells in single-column tables17649
+Node: Customization18429
+Node: Customize transient prefix18816
+Node: Define rules for new environments19605
+Node: Customizing faces23457
+Node: Detached arguments24825
 
 End Tag Table
 

@@ -751,7 +751,7 @@ having CELL shifted in direction DIR (whose value is either
 \\='next\\=', \\='previous\\=', \\='forward\\=' or
 \\='backward\\=').  If no such cell is found in TABLE, return
 nil."
-  (let (target                       ; cons cell column . row
+  (let (target                          ; a cons cell of (column . row)
         output)
     (cond ((eq dir 'next)
            (setq target (cons (plist-get cell :column)
@@ -1429,8 +1429,7 @@ modifies the structure of the table (it comments out a delimiter
 for each cells too)."
   (interactive)
   (latex-table-wizard--setup)
-  (let* ((table (latex-table-wizard--parse-table))
-         (cells (or latex-table-wizard--selection
+  (let* ((cells (or latex-table-wizard--selection
                     (list (latex-table-wizard--get-thing 'cell))))
          (re (regexp-opt latex-table-wizard--current-col-delims))
          (fun (lambda (c ind)
@@ -1451,7 +1450,7 @@ for each cells too)."
                       (funcall fun c ind)
                     (plist-get c :end))))
         (latex-table-wizard--comment-thing start end)))
-    (message "%s cells commmented out" (length sels))))
+    (message "%s cells commented out" (length cells))))
 
 (defun latex-table-wizard-swap ()
   "Swap selection and thing at point.

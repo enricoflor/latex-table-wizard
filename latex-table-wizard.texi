@@ -9,7 +9,7 @@
 @finalout
 @titlepage
 @title @LaTeX{} table wizard - Magic editing of @LaTeX{} tables
-@subtitle for version 1.0.0
+@subtitle for version 1.3.0
 @author Enrico Flor (@email{enrico@@eflor.net})
 @end titlepage
 
@@ -21,7 +21,7 @@
 
 @uref{https://melpa.org/#/latex-table-wizard, file:https://melpa.org/packages/latex-table-wizard-badge.svg}
 
-Copyright (C) 2022 Enrico Flor.
+Copyright (C) 2022, 2023 Enrico Flor.
 
 Permission is granted to copy, distribute and/or modify this
 document under the terms of the GNU Free Documentation License,
@@ -49,9 +49,10 @@ Available commands
 * Start editing::
 * Relative motion commands::
 * Absolute motion commands::
-* Mark, kill and insert commands: Mark kill and insert commands.
+* Mark, kill and insert commands: Mark kill and insert commands. 
 * Swap adjacent fields::
 * Swap arbitrary fields::
+* Comment out cells::
 * Format the table::
 * Extra commands in the transient prefix::
 
@@ -132,9 +133,10 @@ Whenever we say ``current'' we mean ``at point''.
 * Start editing::
 * Relative motion commands::
 * Absolute motion commands::
-* Mark, kill and insert commands: Mark kill and insert commands.
+* Mark, kill and insert commands: Mark kill and insert commands. 
 * Swap adjacent fields::
 * Swap arbitrary fields::
+* Comment out cells::
 * Format the table::
 * Extra commands in the transient prefix::
 @end menu
@@ -202,6 +204,17 @@ movement will consist of.  By default, you can pass this argument
 from the transient interface of @code{latex-table-wizard} with the key @code{u}
 (bound to @code{universal-argument}).
 
+These four commands also accept a second optional argument which, if
+non-nil, prevents the Do What You Mean behavior.  This is useful if
+you want to use these functions to write your own functions to edit
+tables.  Given the table above, if point is on @code{A2}, both of the
+following expressions will return nil and won't move point:
+
+@lisp
+(latex-table-wizard-left 1 t)
+(latex-table-wizard-down 1 t)
+@end lisp
+
 @node Absolute motion commands
 @section Absolute motion commands
 
@@ -232,10 +245,10 @@ from the transient interface of @code{latex-table-wizard} with the key @code{u}
 @node Mark kill and insert commands
 @section Mark, kill and insert commands
 
-@multitable {aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa} {aaaaaaaaaaa} {aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}
+@multitable {aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa} {aaaaaaaaaaa} {aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}
 @headitem Command
 @tab Default key
-@tab
+@tab 
 @item @code{latex-table-wizard-mark-cell}
 @tab @code{m c}
 @tab mark current cell
@@ -245,16 +258,26 @@ from the transient interface of @code{latex-table-wizard} with the key @code{u}
 @item @code{latex-table-wizard-insert-row}
 @tab @code{i r}
 @tab insert row below
-@item @code{latex-table-wizard-kill-column}
+@item @code{latex-table-wizard-kill-column-content}
 @tab @code{k c}
-@tab add content of current column to kill ring
-@item @code{latex-table-wizard-kill-row}
+@tab kill content of current column
+@item @code{latex-table-wizard-kill-row-content}
 @tab @code{k r}
-@tab add content of current row to kill ring
+@tab kill content of current row
+@item @code{latex-table-wizard-delete-column}
+@tab @code{D c}
+@tab delete current column
+@item @code{latex-table-wizard-delete-row}
+@tab @code{D r}
+@tab delete current row
 @item @code{exchange-point-and-mark}
 @tab @code{x}
-@tab
+@tab 
 @end multitable
+
+@code{latex-table-wizard-delete-column} and @code{latex-table-wizard-delete-row}
+modify the structure of the table (they actually remove the
+column/table, not just the content of the cells in them).
 
 @node Swap adjacent fields
 @section Swap adjacent fields
@@ -386,6 +409,29 @@ selection is swapped with the current column or row or the
 corresponding portion thereof.  If you selected multiple cell that are
 not part of the same column or row, the swap won't happen
 (@LaTeX{}-table-wizard doesn't know what you want it to do in that case).
+
+@node Comment out cells
+@section Comment out cells
+
+These two commands act on all the selected cells, if any is;
+otherwise, on the current cell point is on.
+
+@multitable {aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa} {aaaaaaaaaaa} {aaaaaaaaaaaaaaaaaaa}
+@headitem Command
+@tab Default key
+@tab Select current@dots{}
+@item @code{latex-table-wizard-comment-out-content}
+@tab @code{; c}
+@tab comment out content
+@item @code{latex-table-wizard-comment-out}
+@tab @code{; ;}
+@tab comment out
+@end multitable
+
+The difference between the two is that one only comments out the
+content, preserving both delimiters around the cell; the other one
+actually modifies the structure of the table because for any cell that
+is commented out, one delimiter around it is commented out too.
 
 @node Format the table
 @section Format the table
