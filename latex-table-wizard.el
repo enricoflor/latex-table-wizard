@@ -638,8 +638,7 @@ current DIR."
                     (when (and (= (plist-get i :column) col)
                                (= (plist-get i :row) row))
                       (throw 'stop t))
-                    (setq ind (1+ ind))
-                    ))
+                    (setq ind (1+ ind))))
                 ind))
          (land (if (memq dir '(next forward))
                    (latex-table-wizard--get-landing-index
