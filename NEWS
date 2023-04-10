@@ -1,5 +1,18 @@
 -*- mode: org -*-
 
+* 1.3.0
+** New commands:
+*** latex-table-wizard-kill-row-content
+*** latex-table-wizard-kill-column-content
+*** latex-table-wizard-delete-row
+*** latex-table-wizard-delete-column
+** Commands changed:
+*** latex-table-wizard-kill-column
+aliased to new command "latex-table-wizard-kill-column-content"
+*** latex-table-wizard-kill-row
+aliased to new command "latex-table-wizard-kill-row-content"
+
+
 * 1.2.0 <2022-12-20 Tue>
 ** New user option: latex-table-wizard-allow-detached-args
 Same as texmathp-allow-detached-args and

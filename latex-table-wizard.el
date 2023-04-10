@@ -5,7 +5,7 @@
 ;; Author: Enrico Flor <enrico@eflor.net>
 ;; Maintainer: Enrico Flor <enrico@eflor.net>
 ;; URL: https://github.com/enricoflor/latex-table-wizard
-;; Version: 1.2.1
+;; Version: 1.3.0
 ;; Keywords: convenience
 
 ;; Package-Requires: ((emacs "27.1") (auctex "12.1") (transient "0.3.7"))
@@ -632,7 +632,17 @@ current DIR."
   (let* ((steps (or count 1))
          (sorted (latex-table-wizard--sort table same-line dir))
          (cell-num (1- (length sorted)))
-         (now (seq-position sorted curr))
+         (now (let ((ind 0)
+                    (col (plist-get curr :column))
+                    (row (plist-get curr :row)))
+                (catch 'stop
+                  (dolist (i sorted)
+                    (when (and (= (plist-get i :column) col)
+                               (= (plist-get i :row) row))
+                      (throw 'stop t))
+                    (setq ind (1+ ind))
+                    ))
+                ind))
          (land (if (memq dir '(next forward))
                    (latex-table-wizard--get-landing-index
                     now steps 0 cell-num)
@@ -1159,21 +1169,56 @@ TABLE is a list of cell plists.  If it is nil, evaluate
         (goto-char (plist-get x :end))
         (insert " " col-del " ")))))
 
-(defun latex-table-wizard-kill-column ()
-  "Kill content of column at point."
+(defun latex-table-wizard-delete-column ()
+  "Delete current column."
   (interactive)
   (latex-table-wizard--setup)
   (save-excursion
     (let* ((table (latex-table-wizard--parse-table))
            (current-column (latex-table-wizard--get-thing 'column table))
-           (kills '()))
+           (ind (plist-get (car current-column) :column))
+           (re (regexp-opt latex-table-wizard--current-col-delims))
+           (fun (if (= ind 0)
+                    (lambda (c)
+                      (goto-char (plist-get c :end))
+                      (re-search-forward re nil t)
+                      (delete-region (plist-get c :end) (point-marker)))
+                  (lambda (c)
+                    (goto-char (plist-get c :start))
+                    (re-search-backward re nil t)
+                    (delete-region (point-marker) (plist-get c :start)))))
+           kills poss)
+      (dolist (x current-column)
+        (funcall fun x)                 ; get rid of delimiter
+        (let* ((b (plist-get x :start))
+               (e (plist-get x :end)))
+          (push (buffer-substring b e) kills)
+          (push (cons b e) poss)))
+      (dolist (p poss)
+        (delete-region (car p) (cdr p)))
+      (message "Column %s deleted" ind))))
+
+(defalias #'latex-table-wizard-kill-column
+  #'latex-table-wizard-kill-column-content)
+
+(defun latex-table-wizard-kill-column-content ()
+  "Kill content of column at point.  Leave delimiters in place."
+  (interactive)
+  (latex-table-wizard--setup)
+  (save-excursion
+    (let* ((table (latex-table-wizard--parse-table))
+           (current-column (latex-table-wizard--get-thing 'column table))
+           kills poss)
       (dolist (x current-column)
         (let* ((b (plist-get x :start))
-               (next (latex-table-wizard--get-other-cell 'forward t 1 table x))
-               (e (plist-get next :start)))
+               (e (plist-get x :end)))
           (push (buffer-substring b e) kills)
-          (delete-region b e)))
-      (kill-new (string-join (nreverse kills) "\n")))))
+          (push (cons b e) poss)))
+      (dolist (p poss)
+        (delete-region (car p) (cdr p)))
+      (kill-new (string-join (nreverse kills) "\n"))
+      (message "Content of column %s added to kill ring"
+               (plist-get (car current-column) :column)))))
 
 (defun latex-table-wizard-insert-row ()
   "Insert empty row below the one at point."
@@ -1196,7 +1241,30 @@ TABLE is a list of cell plists.  If it is nil, evaluate
           (insert " " col-del))
         (insert " " row-del "\n")))))
 
-(defun latex-table-wizard-kill-row ()
+(defalias #'latex-table-wizard-kill-row
+  #'latex-table-wizard-kill-row-content)
+
+(defun latex-table-wizard-kill-row-content ()
+  "Kill content of row at point.  Leave delimiters in place."
+  (interactive)
+  (latex-table-wizard--setup)
+  (save-excursion
+    (let* ((table (latex-table-wizard--parse-table))
+           (current-row (latex-table-wizard--get-thing 'row table))
+           kills poss)
+      (dolist (x current-row)
+        (let ((b (plist-get x :start))
+              (e (plist-get x :end)))
+          (push (buffer-substring b e) kills)
+          (push (cons b e) poss)))
+      (dolist (p poss)
+        (let ((repl (make-string (- (cdr p) (car p)) 32)))
+          (delete-region (car p) (cdr p))
+          (goto-char (car p))
+          (insert repl)))
+      (kill-new (string-join (nreverse kills) " ")))))
+
+(defun latex-table-wizard-delete-row ()
   "Kill row at point."
   (interactive)
   (latex-table-wizard--setup)
@@ -1317,8 +1385,10 @@ at point.  If it is none of those object, return nil."
 
 (defconst latex-table-wizard-default-transient-keys
   '((toggle-truncate-lines                   "t" "toggle truncate-lines")
-    (latex-table-wizard-kill-row             "k r" "kill current row")
-    (latex-table-wizard-kill-column          "k c" "kill current column")
+    (latex-table-wizard-kill-row-content     "k r" "kill row content")
+    (latex-table-wizard-kill-column-content  "k c" "kill column content")
+    (latex-table-wizard-delete-row           "D r" "delete row")
+    (latex-table-wizard-delete-column        "D c" "delete column")
     (latex-table-wizard-insert-row           "i r" "insert row below")
     (latex-table-wizard-insert-column        "i c" "insert column right")
     (latex-table-wizard-swap                 "s" "swap selection")
@@ -1366,7 +1436,11 @@ information.")
 (defconst latex-table-wizard--interactive-commands
   (seq-concatenate
    'list
-   '(latex-table-wizard-align-left
+   '(latex-table-wizard-kill-row-content
+     latex-table-wizard-kill-column-content
+     latex-table-wizard-delete-column
+     latex-table-wizard-delete-row
+     latex-table-wizard-align-left
      latex-table-wizard-align-right
      latex-table-wizard-center
      latex-table-wizard-compress
@@ -1477,8 +1551,10 @@ suffixes provided by evaluating `latex-table-wizard--make-suffix'."
         ""
         ,(latex-table-wizard--make-suffix 'latex-table-wizard-insert-column)
         ,(latex-table-wizard--make-suffix 'latex-table-wizard-insert-row)
-        ,(latex-table-wizard--make-suffix 'latex-table-wizard-kill-column)
-        ,(latex-table-wizard--make-suffix 'latex-table-wizard-kill-row)
+        ,(latex-table-wizard--make-suffix 'latex-table-wizard-kill-column-content)
+        ,(latex-table-wizard--make-suffix 'latex-table-wizard-kill-row-content)
+        ,(latex-table-wizard--make-suffix 'latex-table-wizard-delete-column)
+        ,(latex-table-wizard--make-suffix 'latex-table-wizard-delete-row)
         ,(latex-table-wizard--make-suffix 'latex-table-wizard-mark-cell)
         ,(latex-table-wizard--make-suffix 'exchange-point-and-mark)]])))
 
@@ -1621,10 +1697,4 @@ remove if `last-command' but not `this-command' is in
   (customize-browse 'latex-table-wizard))
 
 (provide 'latex-table-wizard)
-
-;;; _
-;; Local Variables:
-;; indent-tabs-mode: nil
-;; End:
-
 ;;; latex-table-wizard.el ends here
