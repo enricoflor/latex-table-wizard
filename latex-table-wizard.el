@@ -743,7 +743,38 @@ plists."
               (lambda (x y) (> (plist-get x other-prop)
                                (plist-get y other-prop))))))))
 
-(defun latex-table-wizard--jump (dir &optional absolute count same-line)
+(defsubst latex-table-wizard--shift (dir cell table)
+  "Given a CELL and a list of cells TABLE, return one of TABLE.
+
+The cell returned is the one whose coordinates correspond to
+having CELL shifted in direction DIR (whose value is either
+\\='next\\=', \\='previous\\=', \\='forward\\=' or
+\\='backward\\=').  If no such cell is found in TABLE, return
+nil."
+  (let (target                       ; cons cell column . row
+        output)
+    (cond ((eq dir 'next)
+           (setq target (cons (plist-get cell :column)
+                              (1+ (plist-get cell :row)))))
+          ((eq dir 'previous)
+           (setq target (cons (plist-get cell :column)
+                              (1- (plist-get cell :row)))))
+          ((eq dir 'forward)
+           (setq target (cons (1+ (plist-get cell :column))
+                              (plist-get cell :row))))
+          ((eq dir 'backward)
+           (setq target (cons (1- (plist-get cell :column))
+                              (plist-get cell :row)))))
+    (catch 'found
+      (dolist (c table)
+        (when (and (= (plist-get c :column) (car target))
+                   (= (plist-get c :row) (cdr target)))
+          (setq output c)
+          (throw 'found t))))
+    output))
+
+(defun latex-table-wizard--jump (dir &optional absolute
+                                     count same-line nocycle)
   "Move point to the beginning of a cell in the table.
 
 DIR is either \\='next\\=', \\='previous\\=', \\='forward\\=' or
@@ -757,7 +788,12 @@ or column (depending on the value of DIR) point is currently in.
 COUNT is a positive integer that determines how many steps in
 direction DIR to take.
 
-If SAME-LINE is non-nil, never leave current column or row."
+If SAME-LINE is non-nil, never leave current column or row.
+
+If NOCYCLE is non-nil, do not move and return nil in case the
+jump would move point to a different column (if DIR is either
+\\='forward\\=' or \\='backward\\=') or to a different row (if
+DIR is either \\='next\\=', \\='previous\\=')."
   (unless (ignore-errors (save-excursion (LaTeX-find-matching-begin)))
     (user-error "Not in a LaTeX environment"))
   (let* ((message-log-max 0)
@@ -769,14 +805,17 @@ If SAME-LINE is non-nil, never leave current column or row."
                    (let ((sorted (latex-table-wizard--sort cells t dir)))
                      (if (memq dir '(previous backward))
                          (car sorted)
-                       (car (last sorted)))))))
+                       (car (last sorted))))))
+         (stop (and nocycle (not (latex-table-wizard--shift dir curr cells)))))
     (latex-table-wizard--remove-overlays cells)
-    (goto-char (plist-get target :start))
-    (latex-table-wizard--hl-cells `(,target))
-    (latex-table-wizard--hl-cells latex-table-wizard--selection)
-    (message "Col X Row (%d,%d)"
-             (plist-get target :column)
-             (plist-get target :row))))
+    (unless stop
+        ;; (goto-char (plist-get curr :start))
+      (goto-char (plist-get target :start))
+      (latex-table-wizard--hl-cells `(,target))
+      (latex-table-wizard--hl-cells latex-table-wizard--selection)
+      (message "Col X Row (%d,%d)"
+               (plist-get target :column)
+               (plist-get target :row)))))
 
 
 
@@ -1017,46 +1056,51 @@ Leave point at the beginning of the cell.
 
 If N is nil, move one cell to the right.
 
-If there is no cell to the right of where point is, move to the
-leftmost cell of the row below where point is."
+If there is no cell to the right of where point is, and NOCYCLE
+is nil, move to the leftmost cell of the row below where point
+is.  If NOCYCLE is non-nil, do not move and return nil in that
+case."
   (interactive "p")
-  (latex-table-wizard--jump 'forward nil n))
+  (latex-table-wizard--jump 'forward nil nil n))
 
-(defun latex-table-wizard-left (&optional n)
+(defun latex-table-wizard-left (&optional n nocycle)
   "Move point N cells to the left.
 
 Leave point at the beginning of the cell.
 
 If N is nil, move one cell to the left.
 
-If there is no cell to the left of where point is, move to the
-rightmost cell of the row above where point is."
+If there is no cell to the left of where point is, and NOCYCLE is
+nil, move to the rightmost cell of the row above where point is.
+If NOCYCLE is non-nil, do not move and return nil in that case."
   (interactive "p")
-  (latex-table-wizard--jump 'backward nil n))
+  (latex-table-wizard--jump 'backward nil n nil nocycle))
 
-(defun latex-table-wizard-down (&optional n)
+(defun latex-table-wizard-down (&optional n nocycle)
   "Move point N cells down.
 
 Leave point at the beginning of the cell.
 
 If N is nil, move one row down.
 
-If there is no row below where point is, move to the top cell of
-the column to the right of where point is."
+If there is no row below where point is, and NOCYCLE is nil, move
+to the top cell of the column to the right of where point is.  If
+NOCYCLE is non-nil, do not move and return nil in that case."
   (interactive "p")
-  (latex-table-wizard--jump 'next nil n))
+  (latex-table-wizard--jump 'next nil n nil nocycle))
 
-(defun latex-table-wizard-up (&optional n)
+(defun latex-table-wizard-up (&optional n nocycle)
   "Move point N cells up.
 
 Leave point at the beginning of the cell.
 
 If N is nil, move one row up.
 
-If there is no row above where point is, move to the bottom cell
-of the column to the left of where point is."
+If there is no row above where point is, and NOCYCLE is nil, move
+to the bottom cell of the column to the left of where point is.
+If NOCYCLE is non-nil, do not move and return nil in that case."
   (interactive "p")
-  (latex-table-wizard--jump 'previous nil n))
+  (latex-table-wizard--jump 'previous nil n nil nocycle))
 
 (defun latex-table-wizard-end-of-row ()
   "Move point to the rightmost cell in current row."
@@ -1642,7 +1686,7 @@ If non-nil TABLE is a list of cells."
               (envs (latex-table-wizard--get-env-ends tab))
               (out t))
          (dolist (c latex-table-wizard--selection)
-           (unless (< (car envs) (plist-get c :start) (cdr envs))
+           (unless (<= (car envs) (plist-get c :start) (cdr envs))
              (setq out nil)))
          out)))
 

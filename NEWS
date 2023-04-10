@@ -13,7 +13,10 @@
 aliased to new command "latex-table-wizard-kill-column-content"
 *** latex-table-wizard-kill-row
 aliased to new command "latex-table-wizard-kill-row-content"
-
+*** latex-table-wizard-right, latex-table-wizard-left, latex-table-wizard-down, latex-table-wizard-up
+added a second optional argument NOCYCLE that makes the command return
+nil (instead of moving point), in case the movement in the chosen
+direction hits the boundaries of the table.
 
 * 1.2.0 <2022-12-20 Tue>
 ** New user option: latex-table-wizard-allow-detached-args
