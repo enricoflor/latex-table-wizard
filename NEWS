@@ -6,6 +6,8 @@
 *** latex-table-wizard-kill-column-content
 *** latex-table-wizard-delete-row
 *** latex-table-wizard-delete-column
+*** latex-table-wizard-comment-out
+*** latex-table-wizard-comment-out-content
 ** Commands changed:
 *** latex-table-wizard-kill-column
 aliased to new command "latex-table-wizard-kill-column-content"

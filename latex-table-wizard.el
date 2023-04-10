@@ -415,9 +415,7 @@ argument."
                                          (or (literal "{") (literal "["))))))
              (latex-table-wizard--goto-end-of-macro
               (match-string-no-properties 1)))
-            (t
-             ;; the above should have
-             (forward-char 1))))
+            (t (forward-char 1))))
     `(,beg ,end ,end-of-row)))
 
 (defsubst latex-table-wizard--get-env-ends (table)
@@ -819,6 +817,7 @@ cells have the same value for either :column or :row, it means
 that this selection is neither a column or a row, and nil is
 returned."
   (cond ((= 1 (length sel)) 'cell)
+        ((not sel) (user-error "Empty selection"))
         ((apply #'= (mapcar (lambda (x) (plist-get x :column)) sel)) 'column)
         ((apply #'= (mapcar (lambda (x) (plist-get x :row)) sel)) 'row)
         (t nil)))
@@ -1170,7 +1169,11 @@ TABLE is a list of cell plists.  If it is nil, evaluate
         (insert " " col-del " ")))))
 
 (defun latex-table-wizard-delete-column ()
-  "Delete current column."
+  "Delete current column.
+
+Unlike `latex-table-wizard-kill-column-content', this function
+modifies the structure of the table (it comments out a delimiter
+for each cells too)."
   (interactive)
   (latex-table-wizard--setup)
   (save-excursion
@@ -1198,8 +1201,8 @@ TABLE is a list of cell plists.  If it is nil, evaluate
         (delete-region (car p) (cdr p)))
       (message "Column %s deleted" ind))))
 
-(defalias #'latex-table-wizard-kill-column
-  #'latex-table-wizard-kill-column-content)
+(defalias 'latex-table-wizard-kill-column
+  'latex-table-wizard-kill-column-content)
 
 (defun latex-table-wizard-kill-column-content ()
   "Kill content of column at point.  Leave delimiters in place."
@@ -1241,8 +1244,8 @@ TABLE is a list of cell plists.  If it is nil, evaluate
           (insert " " col-del))
         (insert " " row-del "\n")))))
 
-(defalias #'latex-table-wizard-kill-row
-  #'latex-table-wizard-kill-row-content)
+(defalias 'latex-table-wizard-kill-row
+  'latex-table-wizard-kill-row-content)
 
 (defun latex-table-wizard-kill-row-content ()
   "Kill content of row at point.  Leave delimiters in place."
@@ -1343,6 +1346,69 @@ If SELECT is non-nil, add the cell."
   (setq latex-table-wizard--selection nil)
   (latex-table-wizard--echo-selection))
 
+(defun latex-table-wizard--comment-thing (start end)
+  "Comment out text between markers START and END."
+  (save-excursion
+    (unless (markerp end)
+      (goto-char end)
+      (setq end (point-marker)))
+    (goto-char start)
+    (unless (TeX-in-comment)
+      (insert " " comment-start " ")
+      (goto-char end)
+      (unless (looking-at-p "[[:space:]]*\\(%\\|$\\)")
+        (open-line 1)))))
+
+(defun latex-table-wizard-comment-out-content ()
+  "Comment out the content of the selected cells.
+
+If this command is called while no cell is selected, it defaults
+to current cell (the cell point is in)."
+  (interactive)
+  (latex-table-wizard--setup)
+  (let* ((table (latex-table-wizard--parse-table))
+         (cells (or latex-table-wizard--selection
+                    (list (latex-table-wizard--get-thing 'cell table)))))
+    (dolist (c cells)
+      (latex-table-wizard--comment-thing (plist-get c :start)
+                                         (plist-get c :end)))
+    (message "Content of %s cells commmented out" (length cells))))
+
+(defun latex-table-wizard-comment-out ()
+  "Comment out the the selected cells.
+
+If this command is called while no cell is selected, it defaults
+to current cell (the cell point is in).
+
+Unlike `latex-table-wizard-comment-out-content', this function
+modifies the structure of the table (it comments out a delimiter
+for each cells too)."
+  (interactive)
+  (latex-table-wizard--setup)
+  (let* ((table (latex-table-wizard--parse-table))
+         (cells (or latex-table-wizard--selection
+                    (list (latex-table-wizard--get-thing 'cell))))
+         (re (regexp-opt latex-table-wizard--current-col-delims))
+         (fun (lambda (c ind)
+                (if (= ind 0)
+                    (progn
+                      (goto-char (plist-get c :end))
+                      (re-search-forward re nil t)
+                      (point-marker))
+                  (goto-char (plist-get c :start))
+                  (re-search-backward re nil t)
+                  (point-marker)))))
+    (dolist (c cells)
+      (let* ((ind (plist-get c :column))
+             (start (if (= ind 0)
+                        (plist-get c :start)
+                      (funcall fun c ind)))
+             (end (if (= ind 0)
+                      (funcall fun c ind)
+                    (plist-get c :end))))
+        (latex-table-wizard--comment-thing start end)))
+    (message "%s cells commmented out" (length sels))))
+
 (defun latex-table-wizard-swap ()
   "Swap selection and thing at point.
 
@@ -1389,6 +1455,8 @@ at point.  If it is none of those object, return nil."
     (latex-table-wizard-kill-column-content  "k c" "kill column content")
     (latex-table-wizard-delete-row           "D r" "delete row")
     (latex-table-wizard-delete-column        "D c" "delete column")
+    (latex-table-wizard-comment-out          "; ;" "comment out")
+    (latex-table-wizard-comment-out-content  "; c" "comment out content")
     (latex-table-wizard-insert-row           "i r" "insert row below")
     (latex-table-wizard-insert-column        "i c" "insert column right")
     (latex-table-wizard-swap                 "s" "swap selection")
@@ -1436,7 +1504,9 @@ information.")
 (defconst latex-table-wizard--interactive-commands
   (seq-concatenate
    'list
-   '(latex-table-wizard-kill-row-content
+   '(latex-table-wizard-comment-out-content
+     latex-table-wizard-comment-out
+     latex-table-wizard-kill-row-content
      latex-table-wizard-kill-column-content
      latex-table-wizard-delete-column
      latex-table-wizard-delete-row
@@ -1528,7 +1598,10 @@ suffixes provided by evaluating `latex-table-wizard--make-suffix'."
         ,(latex-table-wizard--make-suffix 'latex-table-wizard-top)
         ,(latex-table-wizard--make-suffix 'latex-table-wizard-bottom)
         ,(latex-table-wizard--make-suffix 'latex-table-wizard-beginning-of-cell)
-        ,(latex-table-wizard--make-suffix 'latex-table-wizard-end-of-cell)]
+        ,(latex-table-wizard--make-suffix 'latex-table-wizard-end-of-cell)
+        ""
+        ,(latex-table-wizard--make-suffix 'latex-table-wizard-mark-cell)
+        ,(latex-table-wizard--make-suffix 'exchange-point-and-mark)]
        [,(latex-table-wizard--make-suffix 'latex-table-wizard-swap-cell-right)
         ,(latex-table-wizard--make-suffix 'latex-table-wizard-swap-cell-left)
         ,(latex-table-wizard--make-suffix 'latex-table-wizard-swap-cell-up)
@@ -1538,10 +1611,13 @@ suffixes provided by evaluating `latex-table-wizard--make-suffix'."
         ,(latex-table-wizard--make-suffix 'latex-table-wizard-swap-row-up)
         ,(latex-table-wizard--make-suffix 'latex-table-wizard-swap-row-down)
         ""
-        ,(latex-table-wizard--make-suffix 'toggle-truncate-lines)
-        ,(latex-table-wizard--make-suffix 'latex-table-wizard-align)
-        ,(latex-table-wizard--make-suffix 'undo)
-        ,(latex-table-wizard--make-suffix 'transient-quit-all)]
+        ,(latex-table-wizard--make-suffix 'latex-table-wizard-insert-column)
+        ,(latex-table-wizard--make-suffix 'latex-table-wizard-insert-row)
+        ,(latex-table-wizard--make-suffix 'latex-table-wizard-kill-column-content)
+        ,(latex-table-wizard--make-suffix 'latex-table-wizard-kill-row-content)
+        ,(latex-table-wizard--make-suffix 'latex-table-wizard-delete-column)
+        ,(latex-table-wizard--make-suffix 'latex-table-wizard-delete-row)
+        ]
        [,(latex-table-wizard--make-suffix 'latex-table-wizard-select-deselect-cell)
         ,(latex-table-wizard--make-suffix 'latex-table-wizard-select-column)
         ,(latex-table-wizard--make-suffix 'latex-table-wizard-select-row)
@@ -1549,14 +1625,26 @@ suffixes provided by evaluating `latex-table-wizard--make-suffix'."
         ""
         ,(latex-table-wizard--make-suffix 'latex-table-wizard-swap)
         ""
-        ,(latex-table-wizard--make-suffix 'latex-table-wizard-insert-column)
-        ,(latex-table-wizard--make-suffix 'latex-table-wizard-insert-row)
-        ,(latex-table-wizard--make-suffix 'latex-table-wizard-kill-column-content)
-        ,(latex-table-wizard--make-suffix 'latex-table-wizard-kill-row-content)
-        ,(latex-table-wizard--make-suffix 'latex-table-wizard-delete-column)
-        ,(latex-table-wizard--make-suffix 'latex-table-wizard-delete-row)
-        ,(latex-table-wizard--make-suffix 'latex-table-wizard-mark-cell)
-        ,(latex-table-wizard--make-suffix 'exchange-point-and-mark)]])))
+        ,(latex-table-wizard--make-suffix 'latex-table-wizard-comment-out)
+        ,(latex-table-wizard--make-suffix 'latex-table-wizard-comment-out-content)
+        ""
+        ,(latex-table-wizard--make-suffix 'toggle-truncate-lines)
+        ,(latex-table-wizard--make-suffix 'latex-table-wizard-align)
+        ,(latex-table-wizard--make-suffix 'undo)
+        ,(latex-table-wizard--make-suffix 'transient-quit-all)]])))
+
+(defun latex-table-wizard--selection-in-current-table-p (&optional table)
+  "Return non-nil if current selection is in current table.
+
+If non-nil TABLE is a list of cells."
+  (and latex-table-wizard--selection
+       (let* ((tab (or table (latex-table-wizard--parse-table)))
+              (envs (latex-table-wizard--get-env-ends tab))
+              (out t))
+         (dolist (c latex-table-wizard--selection)
+           (unless (< (car envs) (plist-get c :start) (cdr envs))
+             (setq out nil)))
+         out)))
 
 (defun latex-table-wizard--setup ()
   "Prepare for an operation on the table.
@@ -1586,7 +1674,10 @@ Preparations mean:
                     orig-point
                     (plist-get cell :end))
           (goto-char (plist-get cell :start)))
-        (latex-table-wizard--hl-cells (list cell))))))
+        (latex-table-wizard--hl-cells (list cell))))
+    (if (latex-table-wizard--selection-in-current-table-p)
+        (latex-table-wizard--echo-selection)
+      (setq latex-table-wizard--selection nil))))
 
 (defalias 'latex-table-wizard-do 'latex-table-wizard)
 
@@ -1668,7 +1759,6 @@ remove if `last-command' but not `this-command' is in
     ;; "unconditionally" of if it seems like we exited a chain of
     ;; latex-table-wizard operations
     (when (or (not if-not-in-chain) exited)
-      (setq latex-table-wizard--selection nil)
       (when-let ((lims (car latex-table-wizard--parse)))
         (remove-overlays (point-min) (point-max) 'tabl-inside-ol t)
         (remove-overlays (point-min) (point-max) 'tabl-outside-ol t)))))
