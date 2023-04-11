@@ -1397,10 +1397,7 @@ If SELECT is non-nil, add the cell."
       (setq end (point-marker)))
     (goto-char start)
     (unless (TeX-in-comment)
-      (insert " " comment-start " ")
-      (goto-char end)
-      (unless (looking-at-p "[[:space:]]*\\(%\\|$\\)")
-        (open-line 1)))))
+      (comment-region start end))))
 
 (defun latex-table-wizard-comment-out-content ()
   "Comment out the content of the selected cells.
