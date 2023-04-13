@@ -5,7 +5,7 @@
 ;; Author: Enrico Flor <enrico@eflor.net>
 ;; Maintainer: Enrico Flor <enrico@eflor.net>
 ;; URL: https://github.com/enricoflor/latex-table-wizard
-;; Version: 1.3.0
+;; Version: 1.3.1
 ;; Keywords: convenience
 
 ;; Package-Requires: ((emacs "27.1") (auctex "12.1") (transient "0.3.7"))
@@ -220,6 +220,12 @@ If the current environment is one that is mapped to something in
         (setq latex-table-wizard--current-hline-macros lines)
       (setq  latex-table-wizard--current-hline-macros
              latex-table-wizard-hline-macros))))
+
+(defvar latex-table-wizard-after-table-modified-hook nil
+  "Hook ran after table has been modified.
+
+This hook is ran only after certain `latex-table-wizard'
+interactive commands are called.")
 
 
 
@@ -691,15 +697,8 @@ POS is a buffer position or a marker.
 If POS is not in a cell in TABLE, it means it's between two
 cells: return the closest one after having moved point to its
 beginning.."
-  (let ((candidate (car (seq-filter
-                         (lambda (x) (<= (plist-get x :start)
-                                         pos
-                                         (plist-get x :end)))
-                         table)))
-        (ends (latex-table-wizard--get-env-ends table)))
-    (cond (candidate
-           candidate)
-          ((< pos (car ends))
+  (let ((ends (latex-table-wizard--get-env-ends table)))
+    (cond ((< pos (car ends))
            (latex-table-wizard--get-cell-pos table
                                              '(:column . 0) '(:row . 0)))
           ((> pos (cdr ends))
@@ -707,17 +706,25 @@ beginning.."
                  (lambda (x) (= (plist-get x :end) (cdr ends)))
                  table)))
           (t
-           (let* ((end-pos
-                   (thread-last
-                     table
-                     (seq-filter (lambda (x) (< (plist-get x :end) pos)))
-                     (mapcar (lambda (x) (plist-get x :end)))
-                     (apply #'max)))
-                  (final (seq-find (lambda (x) (= end-pos
-                                                  (plist-get x :end)))
-                                   table)))
-             (goto-char (plist-get final :start))
-             final)))))
+           (let (candidate)
+             (catch 'found
+               (dolist (c table)
+                 (when (<= (plist-get c :start) pos (plist-get c :end))
+                   (setq candidate c)
+                   (throw 'found t))))
+             (if candidate
+                 candidate
+               (let* ((end-pos
+                       (thread-last
+                         table
+                         (seq-filter (lambda (x) (< (plist-get x :end) pos)))
+                         (mapcar (lambda (x) (plist-get x :end)))
+                         (apply #'max)))
+                      (final (seq-find (lambda (x) (= end-pos
+                                                      (plist-get x :end)))
+                                       table)))
+                 (goto-char (plist-get final :start))
+                 final)))))))
 
 (defun latex-table-wizard--get-thing (thing &optional table)
   "Return THING point is in.
@@ -1014,7 +1021,8 @@ There are five possible values for MODE:
                              (insert (make-string pre
                                                   (string-to-char " ")))
                              (message "Table content centered"))))))))
-            (setq count (1+ count))))))))
+            (setq count (1+ count)))))))
+  (run-hooks 'latex-table-wizard-after-table-modified-hook))
 
 (defun latex-table-wizard-align-left ()
   "Align text in table to the left.
@@ -1209,7 +1217,8 @@ TABLE is a list of cell plists.  If it is nil, evaluate
            (col-del (car latex-table-wizard--current-col-delims)))
       (dolist (x current-column)
         (goto-char (plist-get x :end))
-        (insert " " col-del " ")))))
+        (insert " " col-del " "))))
+  (run-hooks 'latex-table-wizard-after-table-modified-hook))
 
 (defun latex-table-wizard-delete-column ()
   "Delete current column.
@@ -1242,6 +1251,7 @@ for each cells too)."
           (push (cons b e) poss)))
       (dolist (p poss)
         (delete-region (car p) (cdr p)))
+      (run-hooks 'latex-table-wizard-after-table-modified-hook)
       (message "Column %s deleted" ind))))
 
 (defalias 'latex-table-wizard-kill-column
@@ -1263,6 +1273,7 @@ for each cells too)."
       (dolist (p poss)
         (delete-region (car p) (cdr p)))
       (kill-new (string-join (nreverse kills) "\n"))
+      (run-hooks 'latex-table-wizard-after-table-modified-hook)
       (message "Content of column %s added to kill ring"
                (plist-get (car current-column) :column)))))
 
@@ -1285,7 +1296,8 @@ for each cells too)."
         (dotimes (i (1- how-many))
           (ignore i)
           (insert " " col-del))
-        (insert " " row-del "\n")))))
+        (insert " " row-del "\n"))))
+  (run-hooks 'latex-table-wizard-after-table-modified-hook))
 
 (defalias 'latex-table-wizard-kill-row
   'latex-table-wizard-kill-row-content)
@@ -1308,6 +1320,7 @@ for each cells too)."
           (delete-region (car p) (cdr p))
           (goto-char (car p))
           (insert repl)))
+      (run-hooks 'latex-table-wizard-after-table-modified-hook)
       (kill-new (string-join (nreverse kills) " ")))))
 
 (defun latex-table-wizard-delete-row ()
@@ -1318,6 +1331,7 @@ for each cells too)."
     (let* ((table (latex-table-wizard--parse-table))
            (b-e (latex-table-wizard--get-env-ends
                  (latex-table-wizard--get-thing 'row table))))
+      (run-hooks 'latex-table-wizard-after-table-modified-hook)
       (kill-region (car b-e) (cdr b-e)))))
 
 (defun latex-table-wizard--echo-selection ()
@@ -1412,6 +1426,7 @@ to current cell (the cell point is in)."
     (dolist (c cells)
       (latex-table-wizard--comment-thing (plist-get c :start)
                                          (plist-get c :end)))
+    (run-hooks 'latex-table-wizard-after-table-modified-hook)
     (message "Content of %s cells commmented out" (length cells))))
 
 (defun latex-table-wizard-comment-out ()
@@ -1446,6 +1461,7 @@ for each cells too)."
                       (funcall fun c ind)
                     (plist-get c :end))))
         (latex-table-wizard--comment-thing start end)))
+    (run-hooks 'latex-table-wizard-after-table-modified-hook)
     (message "%s cells commented out" (length cells))))
 
 (defun latex-table-wizard-swap ()
@@ -1482,7 +1498,8 @@ at point.  If it is none of those object, return nil."
              (latex-table-wizard--swap-line type other current)))
       (latex-table-wizard--remove-overlays table)
       (latex-table-wizard--hl-cells other)
-      (setq latex-table-wizard--selection nil))))
+      (setq latex-table-wizard--selection nil)
+      (run-hooks 'latex-table-wizard-after-table-modified-hook))))
 
 
 
@@ -1802,6 +1819,13 @@ remove if `last-command' but not `this-command' is in
         (remove-overlays (point-min) (point-max) 'tabl-inside-ol t)
         (remove-overlays (point-min) (point-max) 'tabl-outside-ol t)))))
 
+(defsubst latex-table-wizard--clear-parse ()
+  "Set value of `latex-table-wizard--parse' to nil.
+
+This function is meant to be added to
+`latex-table-wizard-after-table-modified-hook'."
+  (setq latex-table-wizard--parse nil))
+
 (define-minor-mode latex-table-wizard-mode
   "Minor mode for editing LaTeX table-like environments."
   :init-value nil
@@ -1811,10 +1835,14 @@ remove if `last-command' but not `this-command' is in
   (if latex-table-wizard-mode
       (progn
         (latex-table-wizard--make-prefix)
+        (add-hook 'latex-table-wizard-after-table-modified-hook
+                  #'latex-table-wizard--clear-parse nil)
         (add-hook 'before-save-hook #'latex-table-wizard--cleanup nil t)
         (add-hook 'transient-exit-hook #'latex-table-wizard--cleanup nil t)
         (add-hook 'pre-command-hook
                   (apply-partially #'latex-table-wizard--cleanup t) t))
+    (remove-hook 'latex-table-wizard-after-table-modified-hook
+                  #'latex-table-wizard--clear-parse t)
     (remove-hook 'before-save-hook #'latex-table-wizard--cleanup t)
     (remove-hook 'transient-exit-hook #'latex-table-wizard--cleanup t)
     (remove-hook 'pre-command-hook #'latex-table-wizard--cleanup t)))

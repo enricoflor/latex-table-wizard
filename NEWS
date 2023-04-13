@@ -1,5 +1,12 @@
 -*- mode: org -*-
 
+* 1.3.1
+** Added new hook: latex-table-wizard-after-table-modified-hook
+This hook is ran whenever a latex-table-wizard command is called that
+potentially changes the table.  This fixes a bug that previously
+occurred when the user would swap around things in a table
+"vacuously", such that after the command the content of the table was
+exactly the same as before.
 * 1.3.0
 ** New commands:
 *** latex-table-wizard-kill-row-content
