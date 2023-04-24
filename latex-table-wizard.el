@@ -5,7 +5,7 @@
 ;; Author: Enrico Flor <enrico@eflor.net>
 ;; Maintainer: Enrico Flor <enrico@eflor.net>
 ;; URL: https://github.com/enricoflor/latex-table-wizard
-;; Version: 1.3.1
+;; Version: 1.3.2
 ;; Keywords: convenience
 
 ;; Package-Requires: ((emacs "27.1") (auctex "12.1") (transient "0.3.7"))
@@ -1056,7 +1056,7 @@ Make every row start on a new line."
   (latex-table-wizard--setup)
   (latex-table-wizard-align 'compress))
 
-(defun latex-table-wizard-right (&optional n)
+(defun latex-table-wizard-right (&optional n nocycle)
   "Move point N cells to the right.
 
 Leave point at the beginning of the cell.
@@ -1068,7 +1068,7 @@ is nil, move to the leftmost cell of the row below where point
 is.  If NOCYCLE is non-nil, do not move and return nil in that
 case."
   (interactive "p")
-  (latex-table-wizard--jump 'forward nil nil n))
+  (latex-table-wizard--jump 'forward nil n nil nocycle))
 
 (defun latex-table-wizard-left (&optional n nocycle)
   "Move point N cells to the left.
