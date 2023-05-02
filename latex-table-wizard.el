@@ -5,7 +5,7 @@
 ;; Author: Enrico Flor <enrico@eflor.net>
 ;; Maintainer: Enrico Flor <enrico@eflor.net>
 ;; URL: https://github.com/enricoflor/latex-table-wizard
-;; Version: 1.3.2
+;; Version: 1.4.0
 ;; Keywords: convenience
 
 ;; Package-Requires: ((emacs "27.1") (auctex "12.1") (transient "0.3.7"))
@@ -271,8 +271,8 @@ measures needed for the parser not to be confused."
   (unless latex-table-wizard-allow-detached-args
     (let ((message-log-max 0))
       (message (concat "Warning: suspect detached macro found.\n"
-                       "If the table isn't parsed correctly,"
-                       "try to not separate arguments from macro,\n"
+                       "If the table isn't parsed correctly, "
+                       "try not to separate arguments from macro,\n"
                        "or set latex-table-wizard-allow-detached-args"
                        "to t.")))))
 
@@ -469,6 +469,9 @@ to the one that precedes point."
          (env-beg (save-excursion
                     (LaTeX-find-matching-begin)
                     (latex-table-wizard--goto-end-of-macro)
+                    (ignore-errors
+                      (latex-table-wizard--goto-end-of-macro
+                       (regexp-opt latex-table-wizard--current-hline-macros)))
                     (point-marker)))
          (env-end (save-excursion
                     (LaTeX-find-matching-end)
@@ -802,26 +805,28 @@ jump would move point to a different column (if DIR is either
 DIR is either \\='next\\=', \\='previous\\=')."
   (unless (ignore-errors (save-excursion (LaTeX-find-matching-begin)))
     (user-error "Not in a LaTeX environment"))
-  (let* ((message-log-max 0)
-         (cells (latex-table-wizard--parse-table))
-         (curr (latex-table-wizard--get-thing 'cell cells))
-         (target (if (not absolute)
-                     (latex-table-wizard--get-other-cell
-                      dir same-line count cells curr)
-                   (let ((sorted (latex-table-wizard--sort cells t dir)))
-                     (if (memq dir '(previous backward))
-                         (car sorted)
-                       (car (last sorted))))))
-         (stop (and nocycle (not (latex-table-wizard--shift dir curr cells)))))
-    (latex-table-wizard--remove-overlays cells)
-    (unless stop
+  (with-silent-modifications
+    (let* ((message-log-max 0)
+           (cells (latex-table-wizard--parse-table))
+           (curr (latex-table-wizard--get-thing 'cell cells))
+           (target (if (not absolute)
+                       (latex-table-wizard--get-other-cell
+                        dir same-line count cells curr)
+                     (let ((sorted (latex-table-wizard--sort cells t dir)))
+                       (if (memq dir '(previous backward))
+                           (car sorted)
+                         (car (last sorted))))))
+           (stop (and nocycle (not (latex-table-wizard--shift dir curr cells)))))
+
+      (latex-table-wizard--remove-overlays cells)
+      (unless stop
         ;; (goto-char (plist-get curr :start))
-      (goto-char (plist-get target :start))
-      (latex-table-wizard--hl-cells `(,target))
-      (latex-table-wizard--hl-cells latex-table-wizard--selection)
-      (message "Col X Row (%d,%d)"
-               (plist-get target :column)
-               (plist-get target :row)))))
+        (goto-char (plist-get target :start))
+        (latex-table-wizard--hl-cells `(,target))
+        (latex-table-wizard--hl-cells latex-table-wizard--selection)
+        (message "Col X Row (%d,%d)"
+                 (plist-get target :column)
+                 (plist-get target :row))))))
 
 
 
@@ -1501,12 +1506,96 @@ at point.  If it is none of those object, return nil."
       (setq latex-table-wizard--selection nil)
       (run-hooks 'latex-table-wizard-after-table-modified-hook))))
 
+(defun latex-table-wizard--fit-string (str len)
+  "If lenght of string STR is <= than number LEN, trim STR.
+
+That means, apply `string-trim' to STR.  Otherwise, pad STR left
+and right with equal amount of whitespace for it to reach length
+LEN."
+  (let ((nstr (string-trim str)))
+    (if (> (length nstr) len)
+      nstr
+      (let* ((diff (- len (length nstr)))
+
+             (right (make-string (/ diff 2) ?\s))
+             (left (make-string (- diff (/ diff 2)) ?\s)))
+        (concat left nstr right)))))
+
+(defun latex-table-wizard-edit-cell ()
+  "Edit cell at point."
+  (interactive)
+  (let* ((cell (latex-table-wizard--get-thing 'cell))
+         (current-text (buffer-substring (plist-get cell :start)
+                                         (plist-get cell :end)))
+         (len (length current-text))
+         (new-text (read-string "" (string-trim current-text) nil nil t)))
+    (delete-region (plist-get cell :start) (plist-get cell :end))
+    (goto-char (plist-get cell :start))
+    (insert (latex-table-wizard--fit-string new-text len))))
+
+(defvar-local latex-table-wizard--copied-cell-content nil
+  "The return value of `latex-table-wizard-copy-cell-content'.
+
+It replaces the content of current cell upon calling
+`latex-table-wizard-yank-cell-content'.")
+
+(defun latex-table-wizard-copy-cell-content ()
+  "Add content of current cell to the `kill-ring'.
+
+Also set the value of `latex-table-wizard--copied-cell-content'
+to it."
+  (interactive)
+  (let* ((cell (latex-table-wizard--get-thing 'cell))
+         (cont (buffer-substring (plist-get cell :start)
+                                 (plist-get cell :end))))
+    (setq latex-table-wizard--copied-cell-content cont)
+    (kill-new cont)
+    (message "Content of cell (%s,%s) copied"
+             (plist-get cell :column) (plist-get cell :row))))
+
+(defun latex-table-wizard-yank-cell-content ()
+  "Replace content of current cell with a previously copied one.
+
+That is whatever the current value of
+`latex-table-wizard--copied-cell-content'."
+  (interactive)
+  (if (not latex-table-wizard--copied-cell-content)
+      (user-error "No cell content copied")
+    (let* ((cell (latex-table-wizard--get-thing 'cell))
+           (len (length (buffer-substring (plist-get cell :start)
+                                          (plist-get cell :end)))))
+      (delete-region (plist-get cell :start) (plist-get cell :end))
+      (goto-char (plist-get cell :start))
+      (insert (latex-table-wizard--fit-string
+               latex-table-wizard--copied-cell-content
+               len)))))
+
+(defun latex-table-wizard-kill-cell-content ()
+  "Kill content of current cell and add it to the `kill-ring'.
+
+Also set the value of `latex-table-wizard--copied-cell-content'
+to it."
+  (interactive)
+  (let* ((cell (latex-table-wizard--get-thing 'cell))
+         (cont  (buffer-substring (plist-get cell :start)
+                                  (plist-get cell :end))))
+    (delete-region (plist-get cell :start) (plist-get cell :end))
+    (insert " ")
+    (kill-new cont)
+    (setq latex-table-wizard--copied-cell-content cont)
+    (message "Content of cell (%s,%s) copied"
+             (plist-get cell :column) (plist-get cell :row))))
+
 
 
 ;;; Transient
 
 (defconst latex-table-wizard-default-transient-keys
-  '((toggle-truncate-lines                   "t" "toggle truncate-lines")
+  '((latex-table-wizard-copy-cell-content    "w" "copy cell content")
+    (latex-table-wizard-yank-cell-content    "y" "yank cell content")
+    (latex-table-wizard-edit-cell            "." "edit cell")
+    (toggle-truncate-lines                   "t" "toggle truncate-lines")
+    (latex-table-wizard-kill-cell-content    "k k" "kill cell content")
     (latex-table-wizard-kill-row-content     "k r" "kill row content")
     (latex-table-wizard-kill-column-content  "k c" "kill column content")
     (latex-table-wizard-delete-row           "D r" "delete row")
@@ -1560,13 +1649,7 @@ information.")
 (defconst latex-table-wizard--interactive-commands
   (seq-concatenate
    'list
-   '(latex-table-wizard-comment-out-content
-     latex-table-wizard-comment-out
-     latex-table-wizard-kill-row-content
-     latex-table-wizard-kill-column-content
-     latex-table-wizard-delete-column
-     latex-table-wizard-delete-row
-     latex-table-wizard-align-left
+   '(latex-table-wizard-align-left
      latex-table-wizard-align-right
      latex-table-wizard-center
      latex-table-wizard-compress
@@ -1671,6 +1754,7 @@ suffixes provided by evaluating `latex-table-wizard--make-suffix'."
         ,(latex-table-wizard--make-suffix 'latex-table-wizard-insert-row)
         ,(latex-table-wizard--make-suffix 'latex-table-wizard-kill-column-content)
         ,(latex-table-wizard--make-suffix 'latex-table-wizard-kill-row-content)
+        ,(latex-table-wizard--make-suffix 'latex-table-wizard-kill-cell-content)
         ,(latex-table-wizard--make-suffix 'latex-table-wizard-delete-column)
         ,(latex-table-wizard--make-suffix 'latex-table-wizard-delete-row)
         ]
@@ -1678,12 +1762,14 @@ suffixes provided by evaluating `latex-table-wizard--make-suffix'."
         ,(latex-table-wizard--make-suffix 'latex-table-wizard-select-column)
         ,(latex-table-wizard--make-suffix 'latex-table-wizard-select-row)
         ,(latex-table-wizard--make-suffix 'latex-table-wizard-deselect-all)
-        ""
         ,(latex-table-wizard--make-suffix 'latex-table-wizard-swap)
         ""
         ,(latex-table-wizard--make-suffix 'latex-table-wizard-comment-out)
         ,(latex-table-wizard--make-suffix 'latex-table-wizard-comment-out-content)
         ""
+        ,(latex-table-wizard--make-suffix 'latex-table-wizard-edit-cell)
+        ,(latex-table-wizard--make-suffix 'latex-table-wizard-copy-cell-content)
+        ,(latex-table-wizard--make-suffix 'latex-table-wizard-yank-cell-content)
         ,(latex-table-wizard--make-suffix 'toggle-truncate-lines)
         ,(latex-table-wizard--make-suffix 'latex-table-wizard-align)
         ,(latex-table-wizard--make-suffix 'undo)
@@ -1807,17 +1893,17 @@ Only remove them in current buffer.
 Remove unconditionally if IF-NOT-IN-CHAIN is nil, otherwise only
 remove if `last-command' but not `this-command' is in
 `latex-table-wizard--interactive-commands'."
-  (let ((exited (and (memq last-command
+  (let* ((this-comm-wiz (memq this-command
+                              latex-table-wizard--interactive-commands))
+         (exited (and (memq last-command
                            latex-table-wizard--interactive-commands)
-                     (not (memq this-command
-                                latex-table-wizard--interactive-commands)))))
+                      (not this-comm-wiz))))
     ;; now we want to remove stuff either if this function was called
     ;; "unconditionally" of if it seems like we exited a chain of
     ;; latex-table-wizard operations
-    (when (or (not if-not-in-chain) exited)
-      (when-let ((lims (car latex-table-wizard--parse)))
-        (remove-overlays (point-min) (point-max) 'tabl-inside-ol t)
-        (remove-overlays (point-min) (point-max) 'tabl-outside-ol t)))))
+    (when (or (not if-not-in-chain) exited (not this-comm-wiz))
+      (remove-overlays (point-min) (point-max) 'tabl-inside-ol t)
+      (remove-overlays (point-min) (point-max) 'tabl-outside-ol t))))
 
 (defsubst latex-table-wizard--clear-parse ()
   "Set value of `latex-table-wizard--parse' to nil.

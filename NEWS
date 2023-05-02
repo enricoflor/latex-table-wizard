@@ -1,5 +1,11 @@
 -*- mode: org -*-
 
+* 1.4
+** New commands:
+*** latex-table-wizard-edit-cell
+*** latex-table-wizard-copy-cell-content
+*** latex-table-wizard-yank-cell-content
+*** latex-table-wizard-kill-cell-content
 * 1.3.1
 ** Added new hook: latex-table-wizard-after-table-modified-hook
 This hook is ran whenever a latex-table-wizard command is called that

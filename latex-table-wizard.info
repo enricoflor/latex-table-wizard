@@ -1,4 +1,4 @@
-This is latex-table-wizard.info, produced by makeinfo version 6.8 from
+This is latex-table-wizard.info, produced by makeinfo version 7.0.2 from
 latex-table-wizard.texi.
 
 INFO-DIR-SECTION Emacs misc features
@@ -33,6 +33,7 @@ modify this GNU manual.”
 * Available commands::
 * Known issues::
 * Customization::
+* Example setup without Transient interface (Emacs 28 and later)::
 
 — The Detailed Node Listing —
 
@@ -223,15 +224,26 @@ File: latex-table-wizard.info,  Node: Mark kill and insert commands,  Next: Swap
 ==================================
 
 Command                                    Default key
---------------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------
+‘latex-table-wizard-edit-cell’             ‘.’           edit current cell
 ‘latex-table-wizard-mark-cell’             ‘m c’         mark current cell
 ‘latex-table-wizard-insert-column’         ‘i c’         insert empty column to the right
 ‘latex-table-wizard-insert-row’            ‘i r’         insert row below
+‘latex-table-wizard-copy-cell-content’     ‘w’           copy content of current cell
+‘latex-table-wizard-yank-cell-content’     ‘y’           replace and yank into current cell
+‘latex-table-wizard-kill-cell-content’     ‘k k’         kill content of current cell
 ‘latex-table-wizard-kill-column-content’   ‘k c’         kill content of current column
 ‘latex-table-wizard-kill-row-content’      ‘k r’         kill content of current row
 ‘latex-table-wizard-delete-column’         ‘D c’         delete current column
 ‘latex-table-wizard-delete-row’            ‘D r’         delete current row
 ‘exchange-point-and-mark’                  ‘x’
+
+   ‘latex-table-wizard-kill-cell-content’ and
+‘latex-table-wizard-copy-cell-content’ add the content of current cell
+both to the kill ring (like the default kill and copy commands) and to
+the value of a special variable: ‘latex-table-wizard-yank-cell-content’
+will replace the content of the current cell with whatever that value
+is.
 
    ‘latex-table-wizard-delete-column’ and
 ‘latex-table-wizard-delete-row’ modify the structure of the table (they
@@ -472,7 +484,7 @@ parser sees some text.
    So instead of ‘\\ \\’ we will have ‘\\ \blk{} \\’.
 
 
-File: latex-table-wizard.info,  Node: Customization,  Prev: Known issues,  Up: Top
+File: latex-table-wizard.info,  Node: Customization,  Next: Example setup without Transient interface (Emacs 28 and later),  Prev: Known issues,  Up: Top
 
 4 Customization
 ***************
@@ -668,28 +680,52 @@ suspect detached arguments.  The warning is just a message in the echo
 area right after the table is parsed.  If you want this, set the value
 of ‘latex-table-wizard-warn-about-detached-args’ to t.
 
+
+File: latex-table-wizard.info,  Node: Example setup without Transient interface (Emacs 28 and later),  Prev: Customization,  Up: Top
+
+5 Example setup without Transient interface (Emacs 28 and later)
+****************************************************************
+
+Since the interactive commands work independently from the
+functionalities provided by transient.el, you can build your own
+alternative interfaces easily if you prefer so.  For example, the code
+below uses ‘repeat-mode’ (built-in with Emacs 28 and later):
+
+     (require 'repeat)
+
+     (define-prefix-command 'latex-table-wizard-map)
+
+     (define-key global-map (kbd "C-c C-|") 'latex-table-wizard-map)
+
+     (dolist (c latex-table-wizard-transient-keys)
+       (define-key latex-table-wizard-map (kbd (cdr c)) (car c)))
+
+     (dolist (cmd (mapcar #'car latex-table-wizard-transient-keys))
+       (put cmd 'repeat-map 'latex-table-wizard-map))
+
 
 
 Tag Table:
-Node: Top97
-Node: Introduction1561
-Node: Available commands3702
-Node: Start editing4436
-Node: Relative motion commands4951
-Node: Absolute motion commands6897
-Node: Mark kill and insert commands7813
-Node: Swap adjacent fields9070
-Node: Swap arbitrary fields11126
-Node: Comment out cells13213
-Node: Format the table14092
-Node: Extra commands in the transient prefix16778
-Node: Known issues17455
-Node: Empty cells in single-column tables17649
-Node: Customization18429
-Node: Customize transient prefix18816
-Node: Define rules for new environments19605
-Node: Customizing faces23457
-Node: Detached arguments24825
+Node: Top99
+Node: Introduction1630
+Node: Available commands3771
+Node: Start editing4505
+Node: Relative motion commands5020
+Node: Absolute motion commands6966
+Node: Mark kill and insert commands7882
+Node: Swap adjacent fields9859
+Node: Swap arbitrary fields11915
+Node: Comment out cells14002
+Node: Format the table14881
+Node: Extra commands in the transient prefix17567
+Node: Known issues18244
+Node: Empty cells in single-column tables18438
+Node: Customization19218
+Node: Customize transient prefix19676
+Node: Define rules for new environments20465
+Node: Customizing faces24317
+Node: Detached arguments25685
+Node: Example setup without Transient interface (Emacs 28 and later)27946
 
 End Tag Table
 
