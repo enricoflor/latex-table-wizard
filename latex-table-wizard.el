@@ -5,7 +5,7 @@
 ;; Author: Enrico Flor <enrico@eflor.net>
 ;; Maintainer: Enrico Flor <enrico@eflor.net>
 ;; URL: https://github.com/enricoflor/latex-table-wizard
-;; Version: 1.4.1
+;; Version: 1.4.2
 ;; Keywords: convenience
 
 ;; Package-Requires: ((emacs "27.1") (auctex "12.1") (transient "0.3.7"))
@@ -454,11 +454,14 @@ argument."
                  (setq end end-of-previous-cell
                        end-of-row t)
                  (latex-table-wizard--skip-stuff lim)))
-              ((looking-at "$")
+              ((looking-at "\\$")
                (unless (ignore-errors (forward-sexp))
                  (forward-char 1)))
               ((looking-at "\\\\(\\|\\\\\\[")
                (TeX-search-unescaped "\\\\)\\|\\\\\\]" 'forward t nil t))
+              ((looking-at "[[:space:]]*\\\\\\(begin[\[{]\\)")
+               (goto-char (match-beginning 1))
+               (LaTeX-find-matching-end))
               (macro
                (goto-char (nth 1 macro)))
               (t (forward-char 1)))))
