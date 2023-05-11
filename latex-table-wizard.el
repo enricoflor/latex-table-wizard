@@ -5,7 +5,7 @@
 ;; Author: Enrico Flor <enrico@eflor.net>
 ;; Maintainer: Enrico Flor <enrico@eflor.net>
 ;; URL: https://github.com/enricoflor/latex-table-wizard
-;; Version: 1.4.0
+;; Version: 1.4.1
 ;; Keywords: convenience
 
 ;; Package-Requires: ((emacs "27.1") (auctex "12.1") (transient "0.3.7"))
@@ -276,9 +276,74 @@ measures needed for the parser not to be confused."
                        "or set latex-table-wizard-allow-detached-args"
                        "to t.")))))
 
-;; The reason we cannot use TeX-find-macro-end is that, among other
-;; things, that command is not comment sensitive: it will incorrectly
-;; mark the end of a macro in the midle of a comment
+(defun latex-table-wizard--macro-at-point (&optional pos detached-args)
+  "Return data about LaTeX macro at point or at POS, if any.
+
+If POS is nil, check whether point is currently on a LaTeX macro.
+
+Return value is a list that start with the buffer positions of
+begin and end of the macro, and then the strings corresponding to
+the name and each of its arguments.
+
+This function knows nothing about the signature of the macro, so
+it's greedy (it keeps eating up arguments at it finds them, but
+it does not skip over an empty line).
+
+If DETACHED-ARGS is non-nil, allow for arguments of the macro to
+be separated by whitespace and one line break.
+
+Should be rather costly, but robust."
+  (let ((skip-some (lambda ()
+                     (when detached-args
+                       (skip-chars-forward " \t"))
+                     (while (looking-at-p "%.*")
+                       (goto-char (line-beginning-position 2)))
+                     (when detached-args
+                       (skip-chars-forward "\n" (line-end-position 2))
+                       (skip-chars-forward " \t"))))
+        (start (or pos (point)))
+        guess b return e intermediate)
+    (save-excursion
+      (goto-char start)
+      (when (and (not (TeX-escaped-p (1- (point))))
+                 (looking-back "[\]}]" (line-beginning-position)))
+        (forward-char -1))
+      (setq guess (ignore-errors (LaTeX-what-macro)))
+      (cond ((and (looking-back "\\\\[[:alpha:]]*" (line-beginning-position))
+                  (not (TeX-escaped-p (match-beginning 0))))
+             (goto-char (match-beginning 0)))
+            ((and (not guess)
+                  (looking-at-p "\\\\")
+                  (not (TeX-escaped-p)))
+             nil)
+            ((not guess)
+             (TeX-search-unescaped "\\\\[[:alpha:]]" 'backward t nil t))
+            ((eq (nth 1 guess) 'env)
+             (TeX-search-unescaped "\\begin" 'backward nil nil t))
+            ((eq (nth 1 guess) 'mac)
+             (TeX-search-unescaped (concat "\\" (nth 0 guess))
+                                   'backward nil nil t))
+            (t
+             (TeX-search-unescaped (concat "\\begin{" (nth 0 guess))
+                                   'backward nil nil t)))
+      (setq b (point)
+            intermediate (point))
+      (when (looking-at "\\\\[^\[{\s]+")
+        (goto-char (match-end 0)))
+      (push (buffer-substring-no-properties intermediate (point))
+            return)
+      (funcall skip-some)
+      (while (looking-at-p "[\[{]")
+        (setq intermediate (point))
+        (forward-sexp 1)
+        (push (buffer-substring-no-properties intermediate (point))
+              return)
+        (funcall skip-some))
+      (skip-chars-backward " \t\n")
+      (setq e (point))
+      (unless (>= start e)
+        (cons b (cons e (nreverse return)))))))
+
 (defun latex-table-wizard--goto-end-of-macro (&optional name)
   "If looking at unescaped macro named NAME, go to its end.
 
@@ -287,40 +352,26 @@ If NAME is nil, skip any LaTeX macro that point is looking at.
 Call `latex-table-wizard--warn-detached' if the macro is
 separated from its arguments, or any two successive arguments are
 separated from each other."
-  (let* ((bl-rx (if latex-table-wizard-allow-detached-args
-                    latex-table-wizard--blank-detach-arg-re
-                  ""))
-         (n (or name (rx (+ (not (any blank "\n" "{" "["))))))
-         (macro-re (concat "\\(?1:\\\\" n "\\)" bl-rx
-                           "\\(?2:\\({\\|\\[\\)?\\)")))
-    ;; (match-end 1) will the end of the name of the macro,
-    ;; (match-beginning 2) the opening brace of bracket of the first
-    ;; argument (if there is one).
-    ;; this trouble is to deal with problematic arguments to the
-    ;; environment being macro like: \begin{tabular}{@{} llllllll}
-    (when (and (not (TeX-escaped-p)) (looking-at macro-re))
-      (goto-char (match-beginning 2))
-      ;; now if indeed there is no "{" or "[" it means that there are
-      ;; no arguments and we are done, so we should just go back to
-      ;; the end of the name (we might be already there but maybe
-      ;; not!), but if we are looking at a "{}" or "[" then we should
-      ;; try to skip all the arguments
-      (if (looking-at-p "{\\|\\[")
-          (save-match-data
-            (let ((arg-end))
-              (while (looking-at-p "{\\|\\[")
-                (forward-sexp)
-                (setq arg-end (point))
-                (when (and latex-table-wizard-allow-detached-args
-                           (looking-at latex-table-wizard--blank-detach-arg-re))
-                  (goto-char (match-end 0))
-                  (unless (looking-at-p "{\\|\\[")
-                    (setq latex-table-wizard--detached t))))
-              ;; let's go back in case we skipped whitespace
-              (goto-char arg-end)))
-        (goto-char (match-end 1))
-        (unless (looking-at-p "{\\|\\[")
-          (setq latex-table-wizard--detached t))))))
+  (when-let ((macro
+              (latex-table-wizard--macro-at-point
+               nil latex-table-wizard-allow-detached-args)))
+    (when (or (not name) (equal name (string-trim-left (nth 2 macro)
+                                                       "\\\\")))
+      (goto-char (nth 1 macro)))))
+
+(defun latex-table-wizard--get-out ()
+  "If point is on an environment delimiting macro, move out.
+
+If it is on an \\='end\\=' macro, move to its end, otherwise to
+its beginning."
+  (latex-table-wizard--set-current-values)
+  (when-let* ((macro (latex-table-wizard--macro-at-point))
+              (name (string-trim-left "\\\\" (nth 2 macro))))
+    (cond ((equal name "begin")
+           (goto-char (nth 0 macro)))
+          ((equal name "end")
+           (goto-char (nth 1 macro)))
+          (t nil))))
 
 (defun latex-table-wizard--skip-stuff (limit)
   "Skip comments, blank space and hline macros.
@@ -375,53 +426,42 @@ delimiters respectively.
 LIMIT is a buffer position at which the parsing stops, and
 defaults to `point-max' if nothing else is passed as the
 argument."
-  (let ((bl-rx (if latex-table-wizard-allow-detached-args
-                   latex-table-wizard--blank-detach-arg-re
-                 ""))
-        (lim (or limit (point-max)))
+  (let ((lim (or limit (point-max)))
         (beg (point-marker))
-        (end)
-        (end-of-row))
+        end end-of-row)
     (while (and (< (point) lim) (not end))
-      (cond ((looking-at-p "[[:space:]]+%?")
-             (TeX-comment-forward 1))
-            ((TeX-escaped-p)
-             ;; whatever we are looking at is escaped so we just go
-             ;; one step forward
-             (forward-char 1))
-            ((looking-at col-re)
-             ;; a column delimiter: bingo
-             (setq end (point-marker))
-             (goto-char (match-end 0)))
-            ((looking-at row-re)
-             ;; a row delimiter: bingo
-             (let ((after-del (save-excursion
-                                (goto-char (match-end 0))
-                                (point-marker)))
-                   (end-of-previous-cell
-                    (progn (goto-char (match-beginning 0))
-                           (point-marker))))
-               (goto-char after-del)
-               (setq end end-of-previous-cell
-                     end-of-row t)
-               (latex-table-wizard--skip-stuff lim)))
-            ((looking-at-p (eval `(rx (seq "\\begin"
-                                           ,bl-rx
-                                           (or (literal "{")
-                                               (literal "["))))))
-             (forward-char 1)
-             (unless (looking-at-p "begin[{\\|(]")
-               (setq latex-table-wizard--detached t))
-             (LaTeX-find-matching-end))
-            ((looking-at "{")
-             (forward-sexp))
-            ((looking-at (eval `(rx (seq (literal "\\")
-                                         (group-n 1 (+ (not (any blank "\n"))))
-                                         ,bl-rx
-                                         (or (literal "{") (literal "["))))))
-             (latex-table-wizard--goto-end-of-macro
-              (match-string-no-properties 1)))
-            (t (forward-char 1))))
+      (let ((macro (latex-table-wizard--macro-at-point
+                    nil latex-table-wizard-allow-detached-args)))
+        (cond ((looking-at-p "[[:space:]]+%?")
+               (TeX-comment-forward 1))
+              ((TeX-escaped-p)
+               ;; whatever we are looking at is escaped so we just go
+               ;; one step forward
+               (forward-char 1))
+              ((looking-at col-re)
+               ;; a column delimiter: bingo
+               (setq end (point-marker))
+               (goto-char (match-end 0)))
+              ((looking-at row-re)
+               ;; a row delimiter: bingo
+               (let ((after-del (save-excursion
+                                  (goto-char (match-end 0))
+                                  (point-marker)))
+                     (end-of-previous-cell
+                      (progn (goto-char (match-beginning 0))
+                             (point-marker))))
+                 (goto-char after-del)
+                 (setq end end-of-previous-cell
+                       end-of-row t)
+                 (latex-table-wizard--skip-stuff lim)))
+              ((looking-at "$")
+               (unless (ignore-errors (forward-sexp))
+                 (forward-char 1)))
+              ((looking-at "\\\\(\\|\\\\\\[")
+               (TeX-search-unescaped "\\\\)\\|\\\\\\]" 'forward t nil t))
+              (macro
+               (goto-char (nth 1 macro)))
+              (t (forward-char 1)))))
     `(,beg ,end ,end-of-row)))
 
 (defsubst latex-table-wizard--get-env-ends (table)
@@ -692,15 +732,19 @@ The overlay has a non-nil value for the name property
 (defvar-local latex-table-wizard--selection nil
   "Current selection, a list of cell objects.")
 
-(defun latex-table-wizard--locate-point (pos table)
-  "Return cell from TABLE in which position POS is in.
+(defun latex-table-wizard--locate-point (pos &optional cells)
+  "Return cell from CELLS in which position POS is in.
+
+If CELLS is nil, it defaults to the value of
+`latex-table-wizard--parse-table'.
 
 POS is a buffer position or a marker.
 
-If POS is not in a cell in TABLE, it means it's between two
+If POS is not in a cell in CELLS, it means it's between two
 cells: return the closest one after having moved point to its
 beginning.."
-  (let ((ends (latex-table-wizard--get-env-ends table)))
+  (let* ((table (or cells (latex-table-wizard--parse-table)))
+         (ends (latex-table-wizard--get-env-ends table)))
     (cond ((< pos (car ends))
            (latex-table-wizard--get-cell-pos table
                                              '(:column . 0) '(:row . 0)))
@@ -741,7 +785,7 @@ If THING is \\='cell\\=', return one plist, else return a list of
 plists."
   (let* ((pos (point))
          (cells-list (or table (latex-table-wizard--parse-table)))
-         (curr (latex-table-wizard--locate-point pos cells-list)))
+         (curr (latex-table-wizard--locate-point pos)))
     (if (eq thing 'cell)
         curr
       (let* ((prop (if (eq thing 'row) :row :column))
@@ -803,30 +847,30 @@ If NOCYCLE is non-nil, do not move and return nil in case the
 jump would move point to a different column (if DIR is either
 \\='forward\\=' or \\='backward\\=') or to a different row (if
 DIR is either \\='next\\=', \\='previous\\=')."
-  (unless (ignore-errors (save-excursion (LaTeX-find-matching-begin)))
-    (user-error "Not in a LaTeX environment"))
-  (with-silent-modifications
-    (let* ((message-log-max 0)
-           (cells (latex-table-wizard--parse-table))
-           (curr (latex-table-wizard--get-thing 'cell cells))
-           (target (if (not absolute)
-                       (latex-table-wizard--get-other-cell
-                        dir same-line count cells curr)
-                     (let ((sorted (latex-table-wizard--sort cells t dir)))
-                       (if (memq dir '(previous backward))
-                           (car sorted)
-                         (car (last sorted))))))
-           (stop (and nocycle (not (latex-table-wizard--shift dir curr cells)))))
+  (when (latex-table-wizard--in-tabular-env-p)
+    (latex-table-wizard--setup)
+    (with-silent-modifications
+      (let* ((message-log-max 0)
+             (cells (latex-table-wizard--parse-table))
+             (curr (latex-table-wizard--get-thing 'cell cells))
+             (target (if (not absolute)
+                         (latex-table-wizard--get-other-cell
+                          dir same-line count cells curr)
+                       (let ((sorted (latex-table-wizard--sort cells t dir)))
+                         (if (memq dir '(previous backward))
+                             (car sorted)
+                           (car (last sorted))))))
+             (stop (and nocycle (not (latex-table-wizard--shift dir curr cells)))))
 
-      (latex-table-wizard--remove-overlays cells)
-      (unless stop
-        ;; (goto-char (plist-get curr :start))
-        (goto-char (plist-get target :start))
-        (latex-table-wizard--hl-cells `(,target))
-        (latex-table-wizard--hl-cells latex-table-wizard--selection)
-        (message "Col X Row (%d,%d)"
-                 (plist-get target :column)
-                 (plist-get target :row))))))
+        (latex-table-wizard--remove-overlays cells)
+        (unless stop
+          ;; (goto-char (plist-get curr :start))
+          (goto-char (plist-get target :start))
+          (latex-table-wizard--hl-cells `(,target))
+          (latex-table-wizard--hl-cells latex-table-wizard--selection)
+          (message "Col X Row (%d,%d)"
+                   (plist-get target :column)
+                   (plist-get target :row)))))))
 
 
 
@@ -889,21 +933,23 @@ DIR is either \\='forward\\=', \\='backward\\=', \\='next\\=' or
 \\='previous\\='.
 TYPE is either \\='cell\\=', \\='column\\=' or \\='row\\='."
   (latex-table-wizard--remove-overlays)
-  (cond ((eq type 'cell) (latex-table-wizard-select-deselect-cell t t))
-        ((memq dir '(forward backward))
-         (latex-table-wizard-select-column t))
-        ((memq dir '(previous next))
-         (latex-table-wizard-select-row t)))
-  (setq latex-table-wizard--selection
-        (seq-uniq latex-table-wizard--selection))
-  (latex-table-wizard--jump dir nil 1 t)
-  (latex-table-wizard-swap)
-  (let ((new-table (latex-table-wizard--parse-table)))
-    (if (eq type 'cell)
+  (when (latex-table-wizard--in-tabular-env-p)
+    (latex-table-wizard--setup)
+    (cond ((eq type 'cell) (latex-table-wizard-select-deselect-cell t t))
+          ((memq dir '(forward backward))
+           (latex-table-wizard-select-column t))
+          ((memq dir '(previous next))
+           (latex-table-wizard-select-row t)))
+    (setq latex-table-wizard--selection
+          (seq-uniq latex-table-wizard--selection))
+    (latex-table-wizard--jump dir nil 1 t)
+    (latex-table-wizard-swap)
+    (let ((new-table (latex-table-wizard--parse-table)))
+      (if (eq type 'cell)
+          (latex-table-wizard--hl-cells
+           `(,(latex-table-wizard--get-thing type new-table)))
         (latex-table-wizard--hl-cells
-         `(,(latex-table-wizard--get-thing type new-table)))
-      (latex-table-wizard--hl-cells
-       (latex-table-wizard--get-thing type new-table)))))
+         (latex-table-wizard--get-thing type new-table))))))
 
 (defun latex-table-wizard--select-thing (thing &optional no-message)
   "Add THING point is at to list `latex-table-wizard--selection'.
@@ -938,20 +984,6 @@ Don't print any message if NO-MESSAGE is non-nil."
 
 ;;; Interactive functions
 
-(defun latex-table-wizard--get-out ()
-  "If point is on an environment delimiting macro, move out.
-
-If it is on an \\='end\\=' macro, move to its end, otherwise to
-its beginning."
-  (latex-table-wizard--set-current-values)
-  (when-let ((name (TeX-current-macro)))
-    (when (or (string-equal name "begin")
-              (string-equal name "end"))
-      (let ((boundaries (TeX-find-macro-boundaries)))
-        (if (string-equal name "end")
-            (goto-char (cdr boundaries))
-          (goto-char (car boundaries)))))))
-
 (defvar latex-table-wizard--align-status '(left center right compress))
 
 (defun latex-table-wizard-align (&optional mode)
@@ -969,72 +1001,73 @@ There are five possible values for MODE:
     alignment)
 - \\='nil\\=': cycle through the four above modes."
   (interactive)
-  (latex-table-wizard--setup)
-  (latex-table-wizard--remove-overlays)
-  (save-excursion
-    (let ((message-log-max 0)
-          (md (or mode (car latex-table-wizard--align-status)))
-          (max-col (thread-last (latex-table-wizard--parse-table)
-                                (mapcar (lambda (x) (plist-get x :column)))
-                                (delete-dups)
-                                (apply #'max))))
-      (setq latex-table-wizard--align-status
-            (append (cdr latex-table-wizard--align-status)
-                    (list (car latex-table-wizard--align-status))))
-      (dolist (x (seq-filter (lambda (x) (= 0 (plist-get x :column)))
-                             (latex-table-wizard--parse-table)))
-        (goto-char (plist-get x :start))
-        (unless (looking-back "^[[:space:]]*" (line-beginning-position))
-          (insert "\n")))
-      (whitespace-cleanup-region (car (car latex-table-wizard--parse))
-                                 (cdr (car latex-table-wizard--parse)))
-      (dolist (x (flatten-list (mapcar (lambda (x) `(,(plist-get x :start)
-                                                     ,(plist-get x :end)))
-                                       (latex-table-wizard--parse-table))))
-        (goto-char x)
-        (just-one-space))
-      (if (eq md 'compress)
-          (message "Table compressed")
-        (let ((count 0))
-          (while (<= count max-col)
-            (let ((line (seq-filter (lambda (x) (= count (plist-get x :column)))
-                                    (latex-table-wizard--parse-table)))
-                  (col-pos '()))
-              (dolist (cell line)
-                (goto-char (plist-get cell :end))
-                (push (current-column) col-pos))
-              (let ((longest (apply #'max col-pos)))
+  (when (latex-table-wizard--in-tabular-env-p)
+    (latex-table-wizard--setup)
+    (latex-table-wizard--remove-overlays)
+    (save-excursion
+      (let ((message-log-max 0)
+            (md (or mode (car latex-table-wizard--align-status)))
+            (max-col (thread-last (latex-table-wizard--parse-table)
+                                  (mapcar (lambda (x) (plist-get x :column)))
+                                  (delete-dups)
+                                  (apply #'max))))
+        (setq latex-table-wizard--align-status
+              (append (cdr latex-table-wizard--align-status)
+                      (list (car latex-table-wizard--align-status))))
+        (dolist (x (seq-filter (lambda (x) (= 0 (plist-get x :column)))
+                               (latex-table-wizard--parse-table)))
+          (goto-char (plist-get x :start))
+          (unless (looking-back "^[[:space:]]*" (line-beginning-position))
+            (insert "\n")))
+        (whitespace-cleanup-region (car (car latex-table-wizard--parse))
+                                   (cdr (car latex-table-wizard--parse)))
+        (dolist (x (flatten-list (mapcar (lambda (x) `(,(plist-get x :start)
+                                                       ,(plist-get x :end)))
+                                         (latex-table-wizard--parse-table))))
+          (goto-char x)
+          (just-one-space))
+        (if (eq md 'compress)
+            (message "Table compressed")
+          (let ((count 0))
+            (while (<= count max-col)
+              (let ((line (seq-filter (lambda (x) (= count
+                                                     (plist-get x :column)))
+                                      (latex-table-wizard--parse-table)))
+                    (col-pos '()))
                 (dolist (cell line)
                   (goto-char (plist-get cell :end))
-                  (when (< (current-column) longest)
-                    (let* ((tot (- longest (current-column)))
-                           (pre (/ tot 2))
-                           (post (- tot pre)))
-                      (cond ((eq md 'left)
-                             (insert (make-string tot
-                                                  (string-to-char " ")))
-                             (message "Table content aligned left"))
-                            ((eq md 'right)
-                             (goto-char (plist-get cell :start))
-                             (insert (make-string tot
-                                                  (string-to-char " ")))
-                             (message "Table content aligned right"))
-                            ((eq md 'center)
-                             (insert (make-string post
-                                                  (string-to-char " ")))
-                             (goto-char (plist-get cell :start))
-                             (insert (make-string pre
-                                                  (string-to-char " ")))
-                             (message "Table content centered"))))))))
-            (setq count (1+ count)))))))
-  (run-hooks 'latex-table-wizard-after-table-modified-hook))
+                  (push (current-column) col-pos))
+                (let ((longest (apply #'max col-pos)))
+                  (dolist (cell line)
+                    (goto-char (plist-get cell :end))
+                    (when (< (current-column) longest)
+                      (let* ((tot (- longest (current-column)))
+                             (pre (/ tot 2))
+                             (post (- tot pre)))
+                        (cond ((eq md 'left)
+                               (insert (make-string tot
+                                                    (string-to-char " ")))
+                               (message "Table content aligned left"))
+                              ((eq md 'right)
+                               (goto-char (plist-get cell :start))
+                               (insert (make-string tot
+                                                    (string-to-char " ")))
+                               (message "Table content aligned right"))
+                              ((eq md 'center)
+                               (insert (make-string post
+                                                    (string-to-char " ")))
+                               (goto-char (plist-get cell :start))
+                               (insert (make-string pre
+                                                    (string-to-char " ")))
+                               (message "Table content centered"))))))))
+              (setq count (1+ count)))))))
+    (run-hooks 'latex-table-wizard-after-table-modified-hook)))
 
 (defun latex-table-wizard-align-left ()
   "Align text in table to the left.
 
 Make every row start on a new line."
   (interactive)
-  (latex-table-wizard--setup)
   (latex-table-wizard-align 'left))
 
 (defun latex-table-wizard-align-right ()
@@ -1042,7 +1075,6 @@ Make every row start on a new line."
 
 Make every row start on a new line."
   (interactive)
-  (latex-table-wizard--setup)
   (latex-table-wizard-align 'right))
 
 (defun latex-table-wizard-center ()
@@ -1050,7 +1082,6 @@ Make every row start on a new line."
 
 Make every row start on a new line."
   (interactive)
-  (latex-table-wizard--setup)
   (latex-table-wizard-align 'center))
 
 (defun latex-table-wizard-compress ()
@@ -1058,7 +1089,6 @@ Make every row start on a new line."
 
 Make every row start on a new line."
   (interactive)
-  (latex-table-wizard--setup)
   (latex-table-wizard-align 'compress))
 
 (defun latex-table-wizard-right (&optional n nocycle)
@@ -1117,38 +1147,32 @@ If NOCYCLE is non-nil, do not move and return nil in that case."
 (defun latex-table-wizard-end-of-row ()
   "Move point to the rightmost cell in current row."
   (interactive)
-  (latex-table-wizard--setup)
   (latex-table-wizard--jump 'forward t))
 
 (defun latex-table-wizard-beginning-of-row ()
   "Move point to the leftmost cell in current row."
   (interactive)
-  (latex-table-wizard--setup)
   (latex-table-wizard--jump 'backward t))
 
 (defun latex-table-wizard-bottom ()
   "Move point to the bottom cell in current column."
   (interactive)
-  (latex-table-wizard--setup)
   (latex-table-wizard--jump 'next t))
 
 (defun latex-table-wizard-top ()
   "Move point to the top cell in current column."
   (interactive)
-  (latex-table-wizard--setup)
   (latex-table-wizard--jump 'previous t))
 
 (defun latex-table-wizard-end-of-cell ()
   "Move point to the end of the current cell."
   (interactive)
-  (latex-table-wizard--setup)
   (let ((cell (latex-table-wizard--get-thing 'cell)))
     (goto-char (plist-get cell :end))))
 
 (defun latex-table-wizard-beginning-of-cell ()
   "Move point to the beginning of the current cell."
   (interactive)
-  (latex-table-wizard--setup)
   (let ((cell (latex-table-wizard--get-thing 'cell)))
     (goto-char (plist-get cell :start))))
 
@@ -1158,72 +1182,66 @@ If NOCYCLE is non-nil, do not move and return nil in that case."
 TABLE is a list of cell plists.  If it is nil, evaluate
 `latex-table-wizard--parse-table' to get a value."
   (interactive)
-  (latex-table-wizard--setup)
-  (let* ((table (latex-table-wizard--parse-table))
-         (cell (latex-table-wizard--get-thing 'cell table)))
-    (push-mark (plist-get cell :start) nil t)
-    (goto-char (plist-get cell :end))))
+  (when (latex-table-wizard--in-tabular-env-p)
+    (latex-table-wizard--setup)
+    (let* ((table (latex-table-wizard--parse-table))
+           (cell (latex-table-wizard--get-thing 'cell table)))
+      (push-mark (plist-get cell :start) nil t)
+      (goto-char (plist-get cell :end)))))
 
 (defun latex-table-wizard-swap-column-right ()
   "Swap current column and the one to the right."
   (interactive)
-  (latex-table-wizard--setup)
   (latex-table-wizard--swap-adjacent-line 'forward 'column))
 
 (defun latex-table-wizard-swap-column-left ()
   "Swap current column and the one to the left."
   (interactive)
-  (latex-table-wizard--setup)
   (latex-table-wizard--swap-adjacent-line 'backward 'column))
 
 (defun latex-table-wizard-swap-row-up ()
   "Swap current row and the one above."
   (interactive)
-  (latex-table-wizard--setup)
   (latex-table-wizard--swap-adjacent-line 'previous 'row))
 
 (defun latex-table-wizard-swap-row-down ()
   "Swap current row and the one below."
   (interactive)
-  (latex-table-wizard--setup)
   (latex-table-wizard--swap-adjacent-line 'next 'row))
 
 (defun latex-table-wizard-swap-cell-right ()
   "Swap content of current cell and the one to the right."
   (interactive)
-  (latex-table-wizard--setup)
   (latex-table-wizard--swap-adjacent-line 'forward 'cell))
 
 (defun latex-table-wizard-swap-cell-left ()
   "Swap content of current cell and the one to the left."
   (interactive)
-  (latex-table-wizard--setup)
   (latex-table-wizard--swap-adjacent-line 'backward 'cell))
 
 (defun latex-table-wizard-swap-cell-down ()
   "Swap content of current cell and the one below."
   (interactive)
-  (latex-table-wizard--setup)
   (latex-table-wizard--swap-adjacent-line 'next 'cell))
 
 (defun latex-table-wizard-swap-cell-up ()
   "Swap content of current cell and the one above."
   (interactive)
-  (latex-table-wizard--setup)
   (latex-table-wizard--swap-adjacent-line 'previous 'cell))
 
 (defun latex-table-wizard-insert-column ()
   "Insert empty column to the right of the one at point."
   (interactive)
-  (latex-table-wizard--setup)
-  (save-excursion
-    (let* ((table (latex-table-wizard--parse-table))
-           (current-column (latex-table-wizard--get-thing 'column table))
-           (col-del (car latex-table-wizard--current-col-delims)))
-      (dolist (x current-column)
-        (goto-char (plist-get x :end))
-        (insert " " col-del " "))))
-  (run-hooks 'latex-table-wizard-after-table-modified-hook))
+  (when (latex-table-wizard--in-tabular-env-p)
+    (latex-table-wizard--setup)
+    (save-excursion
+      (let* ((table (latex-table-wizard--parse-table))
+             (current-column (latex-table-wizard--get-thing 'column table))
+             (col-del (car latex-table-wizard--current-col-delims)))
+        (dolist (x current-column)
+          (goto-char (plist-get x :end))
+          (insert " " col-del " "))))
+    (run-hooks 'latex-table-wizard-after-table-modified-hook)))
 
 (defun latex-table-wizard-delete-column ()
   "Delete current column.
@@ -1232,32 +1250,33 @@ Unlike `latex-table-wizard-kill-column-content', this function
 modifies the structure of the table (it comments out a delimiter
 for each cells too)."
   (interactive)
-  (latex-table-wizard--setup)
-  (save-excursion
-    (let* ((table (latex-table-wizard--parse-table))
-           (current-column (latex-table-wizard--get-thing 'column table))
-           (ind (plist-get (car current-column) :column))
-           (re (regexp-opt latex-table-wizard--current-col-delims))
-           (fun (if (= ind 0)
+  (when (latex-table-wizard--in-tabular-env-p)
+    (latex-table-wizard--setup)
+    (save-excursion
+      (let* ((table (latex-table-wizard--parse-table))
+             (current-column (latex-table-wizard--get-thing 'column table))
+             (ind (plist-get (car current-column) :column))
+             (re (regexp-opt latex-table-wizard--current-col-delims))
+             (fun (if (= ind 0)
+                      (lambda (c)
+                        (goto-char (plist-get c :end))
+                        (re-search-forward re nil t)
+                        (delete-region (plist-get c :end) (point-marker)))
                     (lambda (c)
-                      (goto-char (plist-get c :end))
-                      (re-search-forward re nil t)
-                      (delete-region (plist-get c :end) (point-marker)))
-                  (lambda (c)
-                    (goto-char (plist-get c :start))
-                    (re-search-backward re nil t)
-                    (delete-region (point-marker) (plist-get c :start)))))
-           kills poss)
-      (dolist (x current-column)
-        (funcall fun x)                 ; get rid of delimiter
-        (let* ((b (plist-get x :start))
-               (e (plist-get x :end)))
-          (push (buffer-substring b e) kills)
-          (push (cons b e) poss)))
-      (dolist (p poss)
-        (delete-region (car p) (cdr p)))
-      (run-hooks 'latex-table-wizard-after-table-modified-hook)
-      (message "Column %s deleted" ind))))
+                      (goto-char (plist-get c :start))
+                      (re-search-backward re nil t)
+                      (delete-region (point-marker) (plist-get c :start)))))
+             kills poss)
+        (dolist (x current-column)
+          (funcall fun x)                 ; get rid of delimiter
+          (let* ((b (plist-get x :start))
+                 (e (plist-get x :end)))
+            (push (buffer-substring b e) kills)
+            (push (cons b e) poss)))
+        (dolist (p poss)
+          (delete-region (car p) (cdr p)))
+        (run-hooks 'latex-table-wizard-after-table-modified-hook)
+        (message "Column %s deleted" ind)))))
 
 (defalias 'latex-table-wizard-kill-column
   'latex-table-wizard-kill-column-content)
@@ -1265,43 +1284,45 @@ for each cells too)."
 (defun latex-table-wizard-kill-column-content ()
   "Kill content of column at point.  Leave delimiters in place."
   (interactive)
-  (latex-table-wizard--setup)
-  (save-excursion
-    (let* ((table (latex-table-wizard--parse-table))
-           (current-column (latex-table-wizard--get-thing 'column table))
-           kills poss)
-      (dolist (x current-column)
-        (let* ((b (plist-get x :start))
-               (e (plist-get x :end)))
-          (push (buffer-substring b e) kills)
-          (push (cons b e) poss)))
-      (dolist (p poss)
-        (delete-region (car p) (cdr p)))
-      (kill-new (string-join (nreverse kills) "\n"))
-      (run-hooks 'latex-table-wizard-after-table-modified-hook)
-      (message "Content of column %s added to kill ring"
-               (plist-get (car current-column) :column)))))
+  (when (latex-table-wizard--in-tabular-env-p)
+    (latex-table-wizard--setup)
+    (save-excursion
+      (let* ((table (latex-table-wizard--parse-table))
+             (current-column (latex-table-wizard--get-thing 'column table))
+             kills poss)
+        (dolist (x current-column)
+          (let* ((b (plist-get x :start))
+                 (e (plist-get x :end)))
+            (push (buffer-substring b e) kills)
+            (push (cons b e) poss)))
+        (dolist (p poss)
+          (delete-region (car p) (cdr p)))
+        (kill-new (string-join (nreverse kills) "\n"))
+        (run-hooks 'latex-table-wizard-after-table-modified-hook)
+        (message "Content of column %s added to kill ring"
+                 (plist-get (car current-column) :column))))))
 
 (defun latex-table-wizard-insert-row ()
   "Insert empty row below the one at point."
   (interactive)
-  (latex-table-wizard--setup)
-  (save-excursion
-    (let* ((table (latex-table-wizard--parse-table))
-           (end-table (cdr (latex-table-wizard--get-env-ends table)))
-           (current-row (latex-table-wizard--sort table t 'forward))
-           (row-del (car latex-table-wizard--current-row-delims))
-           (col-del (car latex-table-wizard--current-col-delims)))
-      (goto-char (plist-get (car (last current-row)) :end))
-      (if (looking-at (concat "[[:space:]]*" row-del))
-          (progn (goto-char (match-end 0))
-                 (latex-table-wizard--skip-stuff end-table))
-        (insert row-del "\n"))
-      (let ((how-many (length current-row)))
-        (dotimes (i (1- how-many))
-          (ignore i)
-          (insert " " col-del))
-        (insert " " row-del "\n"))))
+  (when (latex-table-wizard--in-tabular-env-p)
+    (latex-table-wizard--setup)
+    (save-excursion
+      (let* ((table (latex-table-wizard--parse-table))
+             (end-table (cdr (latex-table-wizard--get-env-ends table)))
+             (current-row (latex-table-wizard--sort table t 'forward))
+             (row-del (car latex-table-wizard--current-row-delims))
+             (col-del (car latex-table-wizard--current-col-delims)))
+        (goto-char (plist-get (car (last current-row)) :end))
+        (if (looking-at (concat "[[:space:]]*" row-del))
+            (progn (goto-char (match-end 0))
+                   (latex-table-wizard--skip-stuff end-table))
+          (insert row-del "\n"))
+        (let ((how-many (length current-row)))
+          (dotimes (i (1- how-many))
+            (ignore i)
+            (insert " " col-del))
+          (insert " " row-del "\n")))))
   (run-hooks 'latex-table-wizard-after-table-modified-hook))
 
 (defalias 'latex-table-wizard-kill-row
@@ -1310,34 +1331,36 @@ for each cells too)."
 (defun latex-table-wizard-kill-row-content ()
   "Kill content of row at point.  Leave delimiters in place."
   (interactive)
-  (latex-table-wizard--setup)
-  (save-excursion
-    (let* ((table (latex-table-wizard--parse-table))
-           (current-row (latex-table-wizard--get-thing 'row table))
-           kills poss)
-      (dolist (x current-row)
-        (let ((b (plist-get x :start))
-              (e (plist-get x :end)))
-          (push (buffer-substring b e) kills)
-          (push (cons b e) poss)))
-      (dolist (p poss)
-        (let ((repl (make-string (- (cdr p) (car p)) 32)))
-          (delete-region (car p) (cdr p))
-          (goto-char (car p))
-          (insert repl)))
-      (run-hooks 'latex-table-wizard-after-table-modified-hook)
-      (kill-new (string-join (nreverse kills) " ")))))
+  (when (latex-table-wizard--in-tabular-env-p)
+    (latex-table-wizard--setup)
+    (save-excursion
+      (let* ((table (latex-table-wizard--parse-table))
+             (current-row (latex-table-wizard--get-thing 'row table))
+             kills poss)
+        (dolist (x current-row)
+          (let ((b (plist-get x :start))
+                (e (plist-get x :end)))
+            (push (buffer-substring b e) kills)
+            (push (cons b e) poss)))
+        (dolist (p poss)
+          (let ((repl (make-string (- (cdr p) (car p)) 32)))
+            (delete-region (car p) (cdr p))
+            (goto-char (car p))
+            (insert repl)))
+        (run-hooks 'latex-table-wizard-after-table-modified-hook)
+        (kill-new (string-join (nreverse kills) " "))))))
 
 (defun latex-table-wizard-delete-row ()
   "Kill row at point."
   (interactive)
-  (latex-table-wizard--setup)
-  (save-excursion
-    (let* ((table (latex-table-wizard--parse-table))
-           (b-e (latex-table-wizard--get-env-ends
-                 (latex-table-wizard--get-thing 'row table))))
-      (run-hooks 'latex-table-wizard-after-table-modified-hook)
-      (kill-region (car b-e) (cdr b-e)))))
+  (when (latex-table-wizard--in-tabular-env-p)
+    (latex-table-wizard--setup)
+    (save-excursion
+      (let* ((table (latex-table-wizard--parse-table))
+             (b-e (latex-table-wizard--get-env-ends
+                   (latex-table-wizard--get-thing 'row table))))
+        (run-hooks 'latex-table-wizard-after-table-modified-hook)
+        (kill-region (car b-e) (cdr b-e))))))
 
 (defun latex-table-wizard--echo-selection ()
   "Print status of selection in the echo area."
@@ -1358,32 +1381,35 @@ for each cells too)."
 
 If NO-MESSAGE is non-nil, do not print anything in the echo area."
   (interactive)
-  (latex-table-wizard--setup)
-  (latex-table-wizard--select-thing 'row no-message)
-  (latex-table-wizard--echo-selection))
+  (when (latex-table-wizard--in-tabular-env-p)
+    (latex-table-wizard--setup)
+    (latex-table-wizard--select-thing 'row no-message)
+    (latex-table-wizard--echo-selection)))
 
 (defun latex-table-wizard-select-column (&optional no-message)
   "Add column at point to selection for swapping.
 
 If NO-MESSAGE is non-nil, do not print anything in the echo area."
   (interactive)
-  (latex-table-wizard--setup)
-  (latex-table-wizard--select-thing 'column no-message)
-  (latex-table-wizard--echo-selection))
+  (when (latex-table-wizard--in-tabular-env-p)
+    (latex-table-wizard--setup)
+    (latex-table-wizard--select-thing 'column no-message)
+    (latex-table-wizard--echo-selection)))
 
 (defun latex-table-wizard--deselect-cell ()
   "Remove cell at point from selection for swapping."
   (interactive)
-  (latex-table-wizard--setup)
-  (let* ((table (latex-table-wizard--parse-table))
-         (curr-cell (latex-table-wizard--get-thing 'cell table)))
-    (setq latex-table-wizard--selection
-          (remove curr-cell latex-table-wizard--selection))
-    (latex-table-wizard--remove-overlays nil
-                                         (plist-get curr-cell :start)
-                                         (plist-get curr-cell :end))
-    (setq latex-table-wizard--selection
-          (remove curr-cell latex-table-wizard--selection))))
+  (when (latex-table-wizard--in-tabular-env-p)
+    (latex-table-wizard--setup)
+    (let* ((table (latex-table-wizard--parse-table))
+           (curr-cell (latex-table-wizard--get-thing 'cell table)))
+      (setq latex-table-wizard--selection
+            (remove curr-cell latex-table-wizard--selection))
+      (latex-table-wizard--remove-overlays nil
+                                           (plist-get curr-cell :start)
+                                           (plist-get curr-cell :end))
+      (setq latex-table-wizard--selection
+            (remove curr-cell latex-table-wizard--selection)))))
 
 (defun latex-table-wizard-select-deselect-cell (&optional no-message select)
   "Add or remove cell at point to selection for swapping.
@@ -1392,21 +1418,23 @@ If NO-MESSAGE is non-nil, do not print anything in the echo area.
 
 If SELECT is non-nil, add the cell."
   (interactive)
-  (latex-table-wizard--setup)
-  (let* ((table (latex-table-wizard--parse-table))
-         (curr (latex-table-wizard--get-thing 'cell table)))
-    (if (and (member curr latex-table-wizard--selection) (not select))
-        (latex-table-wizard--deselect-cell)
-      (latex-table-wizard--select-thing 'cell no-message)))
-  (latex-table-wizard--echo-selection))
+  (when (latex-table-wizard--in-tabular-env-p)
+    (latex-table-wizard--setup)
+    (let* ((table (latex-table-wizard--parse-table))
+           (curr (latex-table-wizard--get-thing 'cell table)))
+      (if (and (member curr latex-table-wizard--selection) (not select))
+          (latex-table-wizard--deselect-cell)
+        (latex-table-wizard--select-thing 'cell no-message))
+      (latex-table-wizard--echo-selection))))
 
 (defun latex-table-wizard-deselect-all ()
   "Remove all selected cells from selection."
   (interactive)
-  (latex-table-wizard--setup)
-  (latex-table-wizard--remove-overlays)
-  (setq latex-table-wizard--selection nil)
-  (latex-table-wizard--echo-selection))
+  (when (latex-table-wizard--in-tabular-env-p)
+    (latex-table-wizard--setup)
+    (latex-table-wizard--remove-overlays)
+    (setq latex-table-wizard--selection nil)
+    (latex-table-wizard--echo-selection)))
 
 (defun latex-table-wizard--comment-thing (start end)
   "Comment out text between markers START and END."
@@ -1424,15 +1452,16 @@ If SELECT is non-nil, add the cell."
 If this command is called while no cell is selected, it defaults
 to current cell (the cell point is in)."
   (interactive)
-  (latex-table-wizard--setup)
-  (let* ((table (latex-table-wizard--parse-table))
-         (cells (or latex-table-wizard--selection
-                    (list (latex-table-wizard--get-thing 'cell table)))))
-    (dolist (c cells)
-      (latex-table-wizard--comment-thing (plist-get c :start)
-                                         (plist-get c :end)))
-    (run-hooks 'latex-table-wizard-after-table-modified-hook)
-    (message "Content of %s cells commmented out" (length cells))))
+  (when (latex-table-wizard--in-tabular-env-p)
+    (latex-table-wizard--setup)
+    (let* ((table (latex-table-wizard--parse-table))
+           (cells (or latex-table-wizard--selection
+                      (list (latex-table-wizard--get-thing 'cell table)))))
+      (dolist (c cells)
+        (latex-table-wizard--comment-thing (plist-get c :start)
+                                           (plist-get c :end)))
+      (run-hooks 'latex-table-wizard-after-table-modified-hook)
+      (message "Content of %s cells commmented out" (length cells)))))
 
 (defun latex-table-wizard-comment-out ()
   "Comment out the the selected cells.
@@ -1444,30 +1473,31 @@ Unlike `latex-table-wizard-comment-out-content', this function
 modifies the structure of the table (it comments out a delimiter
 for each cells too)."
   (interactive)
-  (latex-table-wizard--setup)
-  (let* ((cells (or latex-table-wizard--selection
-                    (list (latex-table-wizard--get-thing 'cell))))
-         (re (regexp-opt latex-table-wizard--current-col-delims))
-         (fun (lambda (c ind)
-                (if (= ind 0)
-                    (progn
-                      (goto-char (plist-get c :end))
-                      (re-search-forward re nil t)
-                      (point-marker))
-                  (goto-char (plist-get c :start))
-                  (re-search-backward re nil t)
-                  (point-marker)))))
-    (dolist (c cells)
-      (let* ((ind (plist-get c :column))
-             (start (if (= ind 0)
-                        (plist-get c :start)
-                      (funcall fun c ind)))
-             (end (if (= ind 0)
-                      (funcall fun c ind)
-                    (plist-get c :end))))
-        (latex-table-wizard--comment-thing start end)))
-    (run-hooks 'latex-table-wizard-after-table-modified-hook)
-    (message "%s cells commented out" (length cells))))
+  (when (latex-table-wizard--in-tabular-env-p)
+    (latex-table-wizard--setup)
+    (let* ((cells (or latex-table-wizard--selection
+                      (list (latex-table-wizard--get-thing 'cell))))
+           (re (regexp-opt latex-table-wizard--current-col-delims))
+           (fun (lambda (c ind)
+                  (if (= ind 0)
+                      (progn
+                        (goto-char (plist-get c :end))
+                        (re-search-forward re nil t)
+                        (point-marker))
+                    (goto-char (plist-get c :start))
+                    (re-search-backward re nil t)
+                    (point-marker)))))
+      (dolist (c cells)
+        (let* ((ind (plist-get c :column))
+               (start (if (= ind 0)
+                          (plist-get c :start)
+                        (funcall fun c ind)))
+               (end (if (= ind 0)
+                        (funcall fun c ind)
+                      (plist-get c :end))))
+          (latex-table-wizard--comment-thing start end)))
+      (run-hooks 'latex-table-wizard-after-table-modified-hook)
+      (message "%s cells commented out" (length cells)))))
 
 (defun latex-table-wizard-swap ()
   "Swap selection and thing at point.
@@ -1477,34 +1507,35 @@ Selection is the current value of
 cell, a column or a row, swap that with the cell, column or row
 at point.  If it is none of those object, return nil."
   (interactive)
-  (latex-table-wizard--setup)
-  (let ((message-log-max 0))
-    (unless latex-table-wizard--selection
-      (message "Select thing to swap first"))
-    (let* ((table (latex-table-wizard--parse-table))
-           ;; we need to remove the current cell from the selection,
-           ;; if it's there, because the general case is that swapping
-           ;; is between the selected cells and the "thing" at point
-           ;; (what this thing is depends on what the selection is).
-           ;; If current cell is selected there will be an attempt of
-           ;; swapping the current cell with itself and this would
-           ;; cause a bug when you are just swapping two cells.
-           (other (remove (latex-table-wizard--get-thing 'cell table)
-                          latex-table-wizard--selection))
-           (type (latex-table-wizard--type-of-selection other))
-           (current (latex-table-wizard--get-thing type table)))
-      (cond ((not type)
-             (latex-table-wizard--cleanup)
-             (setq latex-table-wizard--selection nil)
-             (message "Invalid selection"))
-            ((eq type 'cell)
-             (latex-table-wizard--swap-cells (car other) current))
-            (t
-             (latex-table-wizard--swap-line type other current)))
-      (latex-table-wizard--remove-overlays table)
-      (latex-table-wizard--hl-cells other)
-      (setq latex-table-wizard--selection nil)
-      (run-hooks 'latex-table-wizard-after-table-modified-hook))))
+  (when (latex-table-wizard--in-tabular-env-p)
+    (latex-table-wizard--setup)
+    (let ((message-log-max 0))
+      (unless latex-table-wizard--selection
+        (message "Select thing to swap first"))
+      (let* ((table (latex-table-wizard--parse-table))
+             ;; we need to remove the current cell from the selection,
+             ;; if it's there, because the general case is that swapping
+             ;; is between the selected cells and the "thing" at point
+             ;; (what this thing is depends on what the selection is).
+             ;; If current cell is selected there will be an attempt of
+             ;; swapping the current cell with itself and this would
+             ;; cause a bug when you are just swapping two cells.
+             (other (remove (latex-table-wizard--get-thing 'cell table)
+                            latex-table-wizard--selection))
+             (type (latex-table-wizard--type-of-selection other))
+             (current (latex-table-wizard--get-thing type table)))
+        (cond ((not type)
+               (latex-table-wizard--cleanup)
+               (setq latex-table-wizard--selection nil)
+               (message "Invalid selection"))
+              ((eq type 'cell)
+               (latex-table-wizard--swap-cells (car other) current))
+              (t
+               (latex-table-wizard--swap-line type other current)))
+        (latex-table-wizard--remove-overlays table)
+        (latex-table-wizard--hl-cells other)
+        (setq latex-table-wizard--selection nil)
+        (run-hooks 'latex-table-wizard-after-table-modified-hook)))))
 
 (defun latex-table-wizard--fit-string (str len)
   "If lenght of string STR is <= than number LEN, trim STR.
@@ -1609,7 +1640,7 @@ to it."
     (latex-table-wizard-select-row           "r" "select row")
     (latex-table-wizard-select-column        "c" "select column")
     (latex-table-wizard-select-deselect-cell "SPC" "select/deselect cell")
-    (transient-quit-all                      "RET" "done")
+    (transient-quit-all                      "C-g" "done")
     (universal-argument                      "u" "universal argument")
     (undo                                    "/" "undo")
     (latex-table-wizard-align                "TAB" "cycle alignment")
@@ -1788,6 +1819,30 @@ If non-nil TABLE is a list of cells."
              (setq out nil)))
          out)))
 
+(defvar latex-table-wizard--environments
+  (nconc (mapcar #'car latex-table-wizard-new-environments-alist)
+         (mapcar #'car
+                 (seq-filter (lambda (c) (eq (nth 1 c) 'LaTeX-indent-tabular))
+                             LaTeX-indent-environment-list)))
+  "LaTeX environments where `latex-table-wizard' is useful.
+
+This list contains both the user defined environments from
+`latex-table-wizard-new-environments-alist' and the environments
+AuCTeX indents as tabular according to the specification in
+`LaTeX-indent-environment-list'.")
+
+(defun latex-table-wizard--in-tabular-env-p (&optional pos)
+  "Non-nil if POS is inside a tabular-like environment.
+
+That is, if POS is in an envionment among those in
+`latex-table-wizard--environments'.  If POS is nil, it defaults
+to the value of (point)."
+  (let* ((p (or pos (point)))
+         (env (save-excursion
+                (goto-char p)
+                (LaTeX-current-environment))))
+    (member env latex-table-wizard--environments)))
+
 (defun latex-table-wizard--setup ()
   "Prepare for an operation on the table.
 
@@ -1827,8 +1882,9 @@ Preparations mean:
 (defun latex-table-wizard ()
   "Edit table-like environment with a transient interface."
   (interactive)
-  (latex-table-wizard--setup)
-  (call-interactively #'latex-table-wizard-prefix))
+  (when (latex-table-wizard--in-tabular-env-p)
+    (latex-table-wizard--setup)
+    (call-interactively #'latex-table-wizard-prefix)))
 
 ;;; Aesthetics
 
