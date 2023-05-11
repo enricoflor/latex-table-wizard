@@ -454,7 +454,7 @@ argument."
                  (setq end end-of-previous-cell
                        end-of-row t)
                  (latex-table-wizard--skip-stuff lim)))
-              ((looking-at "\\$")
+              ((looking-at "\\$\\|{")
                (unless (ignore-errors (forward-sexp))
                  (forward-char 1)))
               ((looking-at "\\\\(\\|\\\\\\[")
