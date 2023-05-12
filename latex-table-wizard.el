@@ -1,6 +1,6 @@
 ;;; latex-table-wizard.el --- Magic editing of LaTeX tables  -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2022, 2023 Enrico Flor
+;; Copyright (C) 2022, 2023 Free Software Foundation, Inc.
 
 ;; Author: Enrico Flor <enrico@eflor.net>
 ;; Maintainer: Enrico Flor <enrico@eflor.net>
@@ -11,8 +11,6 @@
 ;; Package-Requires: ((emacs "27.1") (auctex "12.1") (transient "0.3.7"))
 
 ;; SPDX-License-Identifier: GPL-3.0-or-later
-
-;; This file is NOT part of GNU Emacs.
 
 ;; This program is free software; you can redistribute it and/or
 ;; modify it under the terms of the GNU General Public License as
