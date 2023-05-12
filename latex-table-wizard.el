@@ -5,7 +5,7 @@
 ;; Author: Enrico Flor <enrico@eflor.net>
 ;; Maintainer: Enrico Flor <enrico@eflor.net>
 ;; URL: https://github.com/enricoflor/latex-table-wizard
-;; Version: 1.4.2
+;; Version: 1.5.0
 ;; Keywords: convenience
 
 ;; Package-Requires: ((emacs "27.1") (auctex "12.1") (transient "0.3.7"))
@@ -276,10 +276,14 @@ measures needed for the parser not to be confused."
                        "or set latex-table-wizard-allow-detached-args"
                        "to t.")))))
 
-(defun latex-table-wizard--macro-at-point (&optional pos detached-args)
+(defun latex-table-wizard--macro-at-point (&optional pos bound detached-args)
   "Return data about LaTeX macro at point or at POS, if any.
 
-If POS is nil, check whether point is currently on a LaTeX macro.
+If POS is nil, check whether point is currently on a LaTeX macro,
+otherwise check if buffer position or marker POS is on one.
+
+If BOUND is nil, look as far back as you can to see on what macro
+you are, otherwise stop at BOUND (a buffer position or marker).
 
 Return value is a list that start with the buffer positions of
 begin and end of the macro, and then the strings corresponding to
@@ -308,7 +312,7 @@ Should be rather costly, but robust."
       (when (and (not (TeX-escaped-p (1- (point))))
                  (looking-back "[\]}]" (line-beginning-position)))
         (forward-char -1))
-      (setq guess (ignore-errors (LaTeX-what-macro)))
+      (setq guess (ignore-errors (LaTeX-what-macro bound)))
       (cond ((and (looking-back "\\\\[[:alpha:]]*" (line-beginning-position))
                   (not (TeX-escaped-p (match-beginning 0))))
              (goto-char (match-beginning 0)))
@@ -317,7 +321,7 @@ Should be rather costly, but robust."
                   (not (TeX-escaped-p)))
              nil)
             ((not guess)
-             (TeX-search-unescaped "\\\\[[:alpha:]]" 'backward t nil t))
+             (TeX-search-unescaped "\\\\[[:alpha:]]" 'backward t bound t))
             ((eq (nth 1 guess) 'env)
              (TeX-search-unescaped "\\begin" 'backward nil nil t))
             ((eq (nth 1 guess) 'mac)
@@ -344,8 +348,12 @@ Should be rather costly, but robust."
       (unless (>= start e)
         (cons b (cons e (nreverse return)))))))
 
-(defun latex-table-wizard--goto-end-of-macro (&optional name)
+(defun latex-table-wizard--goto-end-of-macro (&optional pos name)
   "If looking at unescaped macro named NAME, go to its end.
+
+If POS is non-nil, it is a marker or buffer position, and it is
+the position from which the macro whould be searched.  If nil, it
+defaults to the current value of `point'.
 
 If NAME is nil, skip any LaTeX macro that point is looking at.
 
@@ -354,7 +362,7 @@ separated from its arguments, or any two successive arguments are
 separated from each other."
   (when-let ((macro
               (latex-table-wizard--macro-at-point
-               nil latex-table-wizard-allow-detached-args)))
+               pos nil latex-table-wizard-allow-detached-args)))
     (when (or (not name) (equal name (string-trim-left (nth 2 macro)
                                                        "\\\\")))
       (goto-char (nth 1 macro)))))
@@ -396,7 +404,7 @@ Stop the skipping at LIMIT (a buffer position or a marker)."
                                 "\\|")))
               (throw 'stop nil)))
           (ignore-errors
-            (latex-table-wizard--goto-end-of-macro
+            (latex-table-wizard--goto-end-of-macro nil
              (regexp-opt latex-table-wizard--current-hline-macros)))
           (when (looking-at "\n\\|%")
             (forward-line)
@@ -409,7 +417,7 @@ Stop the skipping at LIMIT (a buffer position or a marker)."
 
 (defun latex-table-wizard--get-cell-boundaries (col-re
                                                 row-re
-                                                &optional limit)
+                                                beginning limit)
   "Return boundaries of current cell (where point is).
 
 What is returned is a list of the form
@@ -423,15 +431,16 @@ nil otherwise.
 COL-RE and ROW-RE are regular expressions matching column and row
 delimiters respectively.
 
-LIMIT is a buffer position at which the parsing stops, and
-defaults to `point-max' if nothing else is passed as the
-argument."
+BEGINNING is a buffer position that is assumed to be where the
+topmost point a cell left boundary can be.
+
+LIMIT is a buffer position at which the parsing stops."
   (let ((lim (or limit (point-max)))
         (beg (point-marker))
         end end-of-row)
     (while (and (< (point) lim) (not end))
       (let ((macro (latex-table-wizard--macro-at-point
-                    nil latex-table-wizard-allow-detached-args)))
+                    nil beginning latex-table-wizard-allow-detached-args)))
         (cond ((looking-at-p "[[:space:]]+%?")
                (TeX-comment-forward 1))
               ((TeX-escaped-p)
@@ -511,15 +520,20 @@ to the one that precedes point."
          (row 0)
          (env-beg (save-excursion
                     (LaTeX-find-matching-begin)
-                    (latex-table-wizard--goto-end-of-macro)
+                    (latex-table-wizard--goto-end-of-macro (1+ (point)))
                     (ignore-errors
-                      (latex-table-wizard--goto-end-of-macro
+                      (latex-table-wizard--goto-end-of-macro nil
                        (regexp-opt latex-table-wizard--current-hline-macros)))
                     (point-marker)))
          (env-end (save-excursion
                     (LaTeX-find-matching-end)
-                    (TeX-search-unescaped (concat "\\\\end" bl-rx "{")
-                                          'backward t env-beg t)
+                    (if-let ((end-macro
+                              (latex-table-wizard--macro-at-point
+                               (1- (point))
+                               latex-table-wizard-allow-detached-args)))
+                        (goto-char (car end-macro))
+                      (TeX-search-unescaped (concat "\\\\end" bl-rx "[{\[]")
+                                            'backward t env-beg t))
                     (re-search-backward "[^[:space:]]" nil t)
                     (while (TeX-in-comment)
                       (TeX-search-unescaped "%" 'backward t env-beg t)
@@ -550,7 +564,7 @@ to the one that precedes point."
           (skip-syntax-backward " ")
           (while (< (point) env-end)
             (let ((data (latex-table-wizard--get-cell-boundaries
-                         col-re row-re env-end)))
+                         col-re row-re env-beg env-end)))
               (push `( :column ,col
                        :row ,row
                        :start ,(nth 0 data)
