@@ -7,6 +7,7 @@
 #+MACRO: version 1.4.0
 #+MACRO: updated last updated 2 May 2023
 
+    [[https://elpa.gnu.org/packages/latex-table-wizard.html][https://elpa.gnu.org/packages/latex-table-wizard.svg]]
     [[https://melpa.org/#/latex-table-wizard][file:https://melpa.org/packages/latex-table-wizard-badge.svg]]
 
 Copyright (C) 2022, 2023 Enrico Flor.
