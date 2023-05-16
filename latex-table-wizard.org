@@ -429,7 +429,7 @@ Remember the default values used for parsing table environments:
   :type '(repeat string)
   :group 'latex-table-wizard)
 
-(defcustom latex-table-wizard-row-delimiters '("\\\\\\\\")
+(defcustom latex-table-wizard-row-delimiters '("\\\\")
   "List of strings that are row delimiters if unescaped."
   :type '(repeat string)
   :group 'latex-table-wizard)
