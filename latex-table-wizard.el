@@ -216,7 +216,7 @@ If the current environment is one that is mapped to something in
             latex-table-wizard-row-delimiters))
     (if lines
         (setq latex-table-wizard--current-hline-macros lines)
-      (setq  latex-table-wizard--current-hline-macros
+      (setq latex-table-wizard--current-hline-macros
              latex-table-wizard-hline-macros))))
 
 (defvar latex-table-wizard-after-table-modified-hook nil
@@ -319,7 +319,7 @@ Should be rather costly, but robust."
                   (not (TeX-escaped-p)))
              nil)
             ((not guess)
-             (TeX-search-unescaped "\\\\[[:alpha:]]" 'backward t bound t))
+             (TeX-search-unescaped "\\\\[[:alpha:]]" 'backward t nil t))
             ((eq (nth 1 guess) 'env)
              (TeX-search-unescaped "\\begin" 'backward nil nil t))
             ((eq (nth 1 guess) 'mac)
@@ -344,25 +344,33 @@ Should be rather costly, but robust."
       (skip-chars-backward " \t\n")
       (setq e (point))
       (unless (>= start e)
-        (cons b (cons e (nreverse return)))))))
+        (cons b (cons e (nreverse (mapcar #'string-trim return))))))))
 
-(defun latex-table-wizard--goto-end-of-macro (&optional pos name)
+(defun latex-table-wizard--goto-end-of-macro (&optional pos names re)
   "If looking at unescaped macro named NAME, go to its end.
 
 If POS is non-nil, it is a marker or buffer position, and it is
 the position from which the macro whould be searched.  If nil, it
 defaults to the current value of `point'.
 
-If NAME is nil, skip any LaTeX macro that point is looking at.
+If NAMES is nil, skip any LaTeX macro that point is looking at.
+Otherwise, it is a list of strings, and this funcation will only
+skip those macros whose name (without the backslash) is in NAME.
+
+If RE is non-nil, it is a regular expression this function will
+skip every macro whose name is matched by it (ignoring the value
+passed as NAMES)
 
 Call `latex-table-wizard--warn-detached' if the macro is
 separated from its arguments, or any two successive arguments are
 separated from each other."
-  (when-let ((macro
-              (latex-table-wizard--macro-at-point
-               pos nil latex-table-wizard-allow-detached-args)))
-    (when (or (not name) (equal name (string-trim-left (nth 2 macro)
-                                                       "\\\\")))
+  (when-let* ((macro
+               (latex-table-wizard--macro-at-point
+                pos nil latex-table-wizard-allow-detached-args))
+              (mname (string-trim-left (nth 2 macro) "\\\\")))
+    (when (or (and (not names) (not re))
+              (member mname names)
+              (when re (string-match re mname)))
       (goto-char (nth 1 macro)))))
 
 (defun latex-table-wizard--get-out ()
@@ -379,17 +387,23 @@ its beginning."
            (goto-char (nth 1 macro)))
           (t nil))))
 
-(defun latex-table-wizard--skip-stuff (limit)
+(defun latex-table-wizard--skip-stuff (&optional minlimit maxlimit)
   "Skip comments, blank space and hline macros.
 
 Hline macros are LaTeX macros whose name is a string in
 `latex-table-wizard--current-hline-macros'.
 
-Stop the skipping at LIMIT (a buffer position or a marker)."
-  (let ((done)
-        (new-start-of-line))
+MINLIMIT and MAXLIMIT, if non-nil, are buffer positions or
+markers and are the left and the right bound of the skipping.  If
+they are nil, they default to the minimum and the maximum
+available positions in the buffer."
+  (let ((blim (or minlimit (point-min)))
+        (elim (or maxlimit (save-excursion
+                             (goto-char (point-max))
+                             (point-marker))))
+        done new-start-of-line)
     (catch 'stop
-      (while (and (not done) (<= (point) limit))
+      (while (and (not done) (<= (point) elim))
         (skip-syntax-forward " ")
         (let ((temp-pos (point)))
           (when (looking-at "\n\\|%")
@@ -402,8 +416,8 @@ Stop the skipping at LIMIT (a buffer position or a marker)."
                                 "\\|")))
               (throw 'stop nil)))
           (ignore-errors
-            (latex-table-wizard--goto-end-of-macro nil
-             (regexp-opt latex-table-wizard--current-hline-macros)))
+            (latex-table-wizard--goto-end-of-macro
+             nil latex-table-wizard--current-hline-macros))
           (when (looking-at "\n\\|%")
             (forward-line)
             (setq new-start-of-line (point)))
@@ -433,13 +447,15 @@ BEGINNING is a buffer position that is assumed to be where the
 topmost point a cell left boundary can be.
 
 LIMIT is a buffer position at which the parsing stops."
-  (let ((lim (or limit (point-max)))
-        (beg (point-marker))
+  (let ((beg (point-marker))
         end end-of-row)
-    (while (and (< (point) lim) (not end))
+    (latex-table-wizard--skip-stuff beginning limit)
+    (unless (string-blank-p (buffer-substring-no-properties beg (point)))
+      (setq beg (point-marker)))
+    (while (and (< (point) limit) (not end))
       (let ((macro (latex-table-wizard--macro-at-point
                     nil beginning latex-table-wizard-allow-detached-args)))
-        (cond ((looking-at-p "[[:space:]]+%?")
+        (cond ((looking-at-p "[[:space:]]+%")
                (TeX-comment-forward 1))
               ((TeX-escaped-p)
                ;; whatever we are looking at is escaped so we just go
@@ -460,7 +476,7 @@ LIMIT is a buffer position at which the parsing stops."
                  (goto-char after-del)
                  (setq end end-of-previous-cell
                        end-of-row t)
-                 (latex-table-wizard--skip-stuff lim)))
+                 (latex-table-wizard--skip-stuff beginning limit)))
               ((looking-at "\\$\\|{")
                (unless (ignore-errors (forward-sexp))
                  (forward-char 1)))
@@ -520,8 +536,8 @@ to the one that precedes point."
                     (LaTeX-find-matching-begin)
                     (latex-table-wizard--goto-end-of-macro (1+ (point)))
                     (ignore-errors
-                      (latex-table-wizard--goto-end-of-macro nil
-                       (regexp-opt latex-table-wizard--current-hline-macros)))
+                      (latex-table-wizard--goto-end-of-macro
+                       nil latex-table-wizard--current-hline-macros))
                     (point-marker)))
          (env-end (save-excursion
                     (LaTeX-find-matching-end)
@@ -1331,7 +1347,7 @@ for each cells too)."
         (goto-char (plist-get (car (last current-row)) :end))
         (if (looking-at (concat "[[:space:]]*" row-del))
             (progn (goto-char (match-end 0))
-                   (latex-table-wizard--skip-stuff end-table))
+                   (latex-table-wizard--skip-stuff nil end-table))
           (insert row-del "\n"))
         (let ((how-many (length current-row)))
           (dotimes (i (1- how-many))
