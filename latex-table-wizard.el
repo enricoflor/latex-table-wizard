@@ -1649,19 +1649,32 @@ LEN."
 It replaces the content of current cell upon calling
 `latex-table-wizard-yank-cell-content'.")
 
+(defun latex-table-wizard--get-cell-content (&optional kill)
+  "Get content of cell at point.
+
+Add it to the `kill-ring' and as the value of
+`latex-table-wizard--copied-cell-content'.
+
+If KILL is non-nil, also remove that content from the cell. "
+  (let* ((cell (latex-table-wizard--get-thing 'cell))
+         (cont  (buffer-substring (plist-get cell :start)
+                                  (plist-get cell :end))))
+    (when kill
+      (delete-region (plist-get cell :start) (plist-get cell :end))
+      (insert " "))
+    (kill-new (string-trim cont))
+    (setq latex-table-wizard--copied-cell-content cont)
+    (message "Content of cell (%s,%s) %s"
+             (plist-get cell :column) (plist-get cell :row)
+             (if kill "killed" "copied"))))
+
 (defun latex-table-wizard-copy-cell-content ()
   "Add content of current cell to the `kill-ring'.
 
 Also set the value of `latex-table-wizard--copied-cell-content'
 to it."
   (interactive)
-  (let* ((cell (latex-table-wizard--get-thing 'cell))
-         (cont (buffer-substring (plist-get cell :start)
-                                 (plist-get cell :end))))
-    (setq latex-table-wizard--copied-cell-content cont)
-    (kill-new cont)
-    (message "Content of cell (%s,%s) copied"
-             (plist-get cell :column) (plist-get cell :row))))
+  (funcall #'latex-table-wizard--get-cell-content))
 
 (defun latex-table-wizard-yank-cell-content ()
   "Replace content of current cell with a previously copied one.
@@ -1686,15 +1699,7 @@ That is whatever the current value of
 Also set the value of `latex-table-wizard--copied-cell-content'
 to it."
   (interactive)
-  (let* ((cell (latex-table-wizard--get-thing 'cell))
-         (cont  (buffer-substring (plist-get cell :start)
-                                  (plist-get cell :end))))
-    (delete-region (plist-get cell :start) (plist-get cell :end))
-    (insert " ")
-    (kill-new cont)
-    (setq latex-table-wizard--copied-cell-content cont)
-    (message "Content of cell (%s,%s) copied"
-             (plist-get cell :column) (plist-get cell :row))))
+  (funcall #'latex-table-wizard--get-cell-content t))
 
 
 
