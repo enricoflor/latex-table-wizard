@@ -5,7 +5,7 @@
 ;; Author: Enrico Flor <enrico@eflor.net>
 ;; Maintainer: Enrico Flor <enrico@eflor.net>
 ;; URL: https://github.com/enricoflor/latex-table-wizard
-;; Version: 1.5.2
+;; Version: 1.5.3
 ;; Keywords: convenience
 
 ;; Package-Requires: ((emacs "27.1") (auctex "12.1") (transient "0.3.7"))
@@ -1074,6 +1074,16 @@ There are five possible values for MODE:
   (when (latex-table-wizard--in-tabular-env-p)
     (latex-table-wizard--setup)
     (latex-table-wizard--remove-overlays)
+    (unless (member last-command
+                    '(latex-table-wizard-align
+                      latex-table-wizard-align-left
+                      latex-table-wizard-align-right
+                      latex-table-wizard-align-center
+                      latex-table-wizard-compress))
+      ;; always start with aligning left, as per fountainer's
+      ;; suggestion
+      ;; https://github.com/enricoflor/latex-table-wizard/issues/2#issue-1748301074
+      (setq latex-table-wizard--align-status '(left center right compress)))
     (save-excursion
       (let ((message-log-max 0)
             (md (or mode (car latex-table-wizard--align-status)))
