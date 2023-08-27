@@ -5,7 +5,7 @@
 ;; Author: Enrico Flor <enrico@eflor.net>
 ;; Maintainer: Enrico Flor <enrico@eflor.net>
 ;; URL: https://github.com/enricoflor/latex-table-wizard
-;; Version: 1.5.3
+;; Version: 1.5.4
 ;; Keywords: convenience
 
 ;; Package-Requires: ((emacs "27.1") (auctex "12.1") (transient "0.3.7"))
@@ -297,57 +297,59 @@ If DETACHED-ARGS is non-nil, allow for arguments of the macro to
 be separated by whitespace and one line break.
 
 Should be rather costly, but robust."
-  (let ((limit (or bound latex-table-wizard--table-begin (point-min)))
-        (skip-some (lambda ()
-                     (when detached-args
-                       (skip-chars-forward " \t"))
-                     (while (looking-at-p "%.*")
-                       (goto-char (line-beginning-position 2)))
-                     (when detached-args
-                       (skip-chars-forward "\n" (line-end-position 2))
-                       (skip-chars-forward " \t"))))
-        (start (or pos (point)))
-        guess b return e intermediate)
-    (save-excursion
-      (goto-char start)
-      (when (and (not (TeX-escaped-p (1- (point))))
-                 (looking-back "[\]}]" (line-beginning-position)))
-        (forward-char -1))
-      (setq guess (ignore-errors (LaTeX-what-macro limit)))
-      (cond ((and (looking-back "\\\\[[:alpha:]]*" (line-beginning-position))
-                  (not (TeX-escaped-p (match-beginning 0))))
-             (goto-char (match-beginning 0)))
-            ((and (not guess)
-                  (looking-at-p "\\\\")
-                  (not (TeX-escaped-p)))
-             nil)
-            ((not guess)
-             (TeX-search-unescaped "\\\\[[:alpha:]]" 'backward t nil t))
-            ((eq (nth 1 guess) 'env)
-             (TeX-search-unescaped "\\begin" 'backward nil nil t))
-            ((eq (nth 1 guess) 'mac)
-             (TeX-search-unescaped (concat "\\" (nth 0 guess))
-                                   'backward nil nil t))
-            (t
-             (TeX-search-unescaped (concat "\\begin{" (nth 0 guess))
-                                   'backward nil nil t)))
-      (setq b (point)
-            intermediate (point))
-      (when (looking-at "\\\\[^\[{\s]+")
-        (goto-char (match-end 0)))
-      (push (buffer-substring-no-properties intermediate (point))
-            return)
-      (funcall skip-some)
-      (while (looking-at-p "[\[{]")
-        (setq intermediate (point))
-        (forward-sexp 1)
+  (declare (side-effect-free t))
+  (save-match-data
+    (let ((limit (or bound latex-table-wizard--table-begin (point-min)))
+          (skip-some (lambda ()
+                       (when detached-args
+                         (skip-chars-forward " \t"))
+                       (while (looking-at-p "%.*")
+                         (goto-char (line-beginning-position 2)))
+                       (when detached-args
+                         (skip-chars-forward "\n" (line-end-position 2))
+                         (skip-chars-forward " \t"))))
+          (start (or pos (point)))
+          guess b return e intermediate)
+      (save-excursion
+        (goto-char start)
+        (when (and (not (TeX-escaped-p (1- (point))))
+                   (looking-back "[\]}]" (line-beginning-position)))
+          (forward-char -1))
+        (setq guess (ignore-errors (LaTeX-what-macro limit)))
+        (cond ((and (looking-back "\\\\[[:alpha:]]*" (line-beginning-position))
+                    (not (TeX-escaped-p (match-beginning 0))))
+               (goto-char (match-beginning 0)))
+              ((and (not guess)
+                    (looking-at-p "\\\\")
+                    (not (TeX-escaped-p)))
+               nil)
+              ((not guess)
+               (TeX-search-unescaped "\\\\[[:alpha:]]" 'backward t nil t))
+              ((eq (nth 1 guess) 'env)
+               (TeX-search-unescaped "\\begin" 'backward nil nil t))
+              ((eq (nth 1 guess) 'mac)
+               (TeX-search-unescaped (concat "\\" (nth 0 guess))
+                                     'backward nil nil t))
+              (t
+               (TeX-search-unescaped (concat "\\begin{" (nth 0 guess))
+                                     'backward nil nil t)))
+        (setq b (point)
+              intermediate (point))
+        (when (looking-at "\\\\[^\[{\s]+")
+          (goto-char (match-end 0)))
         (push (buffer-substring-no-properties intermediate (point))
               return)
-        (funcall skip-some))
-      (skip-chars-backward " \t\n")
-      (setq e (point))
-      (unless (>= start e)
-        (cons b (cons e (nreverse (mapcar #'string-trim return))))))))
+        (funcall skip-some)
+        (while (looking-at-p "[\[{]")
+          (setq intermediate (point))
+          (forward-sexp 1)
+          (push (buffer-substring-no-properties intermediate (point))
+                return)
+          (funcall skip-some))
+        (skip-chars-backward " \t\n")
+        (setq e (point))
+        (unless (>= start e)
+          (cons b (cons e (nreverse (mapcar #'string-trim return)))))))))
 
 (defun latex-table-wizard--goto-end-of-macro (&optional pos names re)
   "If looking at unescaped macro named NAME, go to its end.
@@ -431,9 +433,7 @@ maximum available position in current buffer)."
             (setq done t)))))
     (when new-start-of-line (goto-char new-start-of-line))))
 
-(defun latex-table-wizard--get-cell-boundaries (col-re
-                                                row-re
-                                                beginning limit)
+(defun latex-table-wizard--get-cell-boundaries (col-re row-re beginning limit)
   "Return boundaries of current cell (where point is).
 
 What is returned is a list of the form
@@ -451,48 +451,49 @@ BEGINNING is a buffer position that is assumed to be where the
 topmost point a cell left boundary can be.
 
 LIMIT is a buffer position at which the parsing stops."
-  (let ((beg (point-marker))
-        end end-of-row)
-    (latex-table-wizard--skip-stuff limit)
-    (unless (string-blank-p (buffer-substring-no-properties beg (point)))
-      (setq beg (point-marker)))
-    (while (and (< (point) limit) (not end))
-      (let ((macro (latex-table-wizard--macro-at-point
-                    nil beginning latex-table-wizard-allow-detached-args)))
-        (cond ((looking-at-p "[[:space:]]+%")
-               (TeX-comment-forward 1))
-              ((TeX-escaped-p)
-               ;; whatever we are looking at is escaped so we just go
-               ;; one step forward
-               (forward-char 1))
-              ((looking-at col-re)
-               ;; a column delimiter: bingo
-               (setq end (point-marker))
-               (goto-char (match-end 0)))
-              ((looking-at row-re)
-               ;; a row delimiter: bingo
-               (let ((after-del (save-excursion
-                                  (goto-char (match-end 0))
-                                  (point-marker)))
-                     (end-of-previous-cell
-                      (progn (goto-char (match-beginning 0))
-                             (point-marker))))
-                 (goto-char after-del)
-                 (setq end end-of-previous-cell
-                       end-of-row t)
-                 (latex-table-wizard--skip-stuff limit)))
-              ((looking-at "\\$\\|{")
-               (unless (ignore-errors (forward-sexp))
-                 (forward-char 1)))
-              ((looking-at "\\\\(\\|\\\\\\[")
-               (TeX-search-unescaped "\\\\)\\|\\\\\\]" 'forward t nil t))
-              ((looking-at "[[:space:]]*\\\\\\(begin[\[{]\\)")
-               (goto-char (match-beginning 1))
-               (LaTeX-find-matching-end))
-              (macro
-               (goto-char (nth 1 macro)))
-              (t (forward-char 1)))))
-    `(,beg ,end ,end-of-row)))
+  (declare (side-effect-free t))
+  (save-match-data
+    (let ((beg (point-marker))
+          end end-of-row)
+      (latex-table-wizard--skip-stuff limit)
+      (unless (string-blank-p (buffer-substring-no-properties beg (point)))
+        (setq beg (point-marker)))
+      (while (and (< (point) limit) (not end))
+        (let ((macro (latex-table-wizard--macro-at-point
+                      nil beginning latex-table-wizard-allow-detached-args)))
+          (cond ((looking-at-p "[[:space:]]+%")
+                 (TeX-comment-forward 1))
+                ((TeX-escaped-p)
+                 ;; whatever we are looking at is escaped so we just go
+                 ;; one step forward
+                 (forward-char 1))
+                ((looking-at col-re)
+                 ;; a column delimiter: bingo
+                 (setq end (point-marker))
+                 (goto-char (match-end 0)))
+                ((looking-at row-re)
+                 ;; a row delimiter: bingo
+                 (let ((after-del (save-excursion (goto-char (match-end 0))
+                                                  (point-marker)))
+                       (end-of-previous-cell
+                        (progn (goto-char (match-beginning 0))
+                               (point-marker))))
+                   (goto-char after-del)
+                   (setq end end-of-previous-cell
+                         end-of-row t)
+                   (latex-table-wizard--skip-stuff limit)))
+                ((looking-at "\\$\\|{")
+                 (unless (ignore-errors (forward-sexp))
+                   (forward-char 1)))
+                ((looking-at "\\\\(\\|\\\\\\[")
+                 (TeX-search-unescaped "\\\\)\\|\\\\\\]" 'forward t nil t))
+                ((looking-at "[[:space:]]*\\\\\\(begin[\[{]\\)")
+                 (goto-char (match-beginning 1))
+                 (LaTeX-find-matching-end))
+                (macro
+                 (goto-char (nth 1 macro)))
+                (t (forward-char 1)))))
+      (list beg end end-of-row))))
 
 (defsubst latex-table-wizard--get-env-ends (table)
   "Return leftmost and rightmost positions in TABLE.
@@ -507,6 +508,7 @@ necessarily correspond to `latex-table-wizard--table-begin' and
 only if there are no hline macros at the beginning or at the end
 of the table (which are part of the table environment but not of
 any cell)."
+  (declare (pure t) (side-effect-free t))
   `(,(apply #'min (mapcar (lambda (x) (plist-get x :start)) table))
     .
     ,(apply #'max (mapcar (lambda (x) (plist-get x :end)) table))))
@@ -652,6 +654,7 @@ is a cons cell of the form (P . V), where P is either
 If prop-val2 is nil, it is assumed that TABLE is a list of cells
 that only differ for the property in the car of PROP-VAL1 (in
 other words, that TABLE is either a column or a row)"
+  (declare (pure t) (side-effect-free t))
   (catch 'cell
     (if prop-val2
         (dolist (x table)
@@ -681,6 +684,7 @@ like this:
 if DIR is either \\='forward\\=' or \\='backward\\=', A follows
 F, C precedes D and so on; and if DIR is either \\='next\\=' or
 \\='previous\\=', A follows F, D precedes B and so on."
+  (declare (pure t) (side-effect-free t))
   (let* ((vert (memq dir '(next previous)))
          (prop (if vert :row :column))
          (thing (if vert
@@ -720,6 +724,7 @@ or negative integer).
 
 MAX-INDEX is the index at which the movement restarts from
 MIN-INDEX (which if not specified defaults to 0)."
+  (declare (pure t) (side-effect-free t))
   (let* ((zero-index (or min-index 0))
          (floor (min zero-index max-index))
          (ceiling (max zero-index max-index))
@@ -746,6 +751,7 @@ If SAME-LINE is non-nil, loop over the current row (if DIR is
 \\='next\\=' or \\='previous\\=').  Otherwise continue search for
 cell in a different row or column if no cell is left in the
 current DIR."
+  (declare (pure t) (side-effect-free t))
   (let* ((steps (or count 1))
          (sorted (latex-table-wizard--sort table same-line dir))
          (cell-num (1- (length sorted)))
@@ -802,17 +808,17 @@ The overlay has a non-nil value for the name property
 (defvar-local latex-table-wizard--selection nil
   "Current selection, a list of cell objects.")
 
-(defun latex-table-wizard--locate-point (pos &optional cells)
+(defun latex-table-wizard--locate-point (pos cells)
   "Return cell from CELLS in which position POS is in.
 
-If CELLS is nil, it defaults to the value of
-`latex-table-wizard--parse-table'.
+CELLS is a list of cell plists.
 
 POS is a buffer position or a marker.
 
 If POS is not in a cell in CELLS, it means it's between two
 cells: return the closest one after having moved point to its
-beginning.."
+beginning."
+  (declare (pure t))
   (let* ((table (or cells (latex-table-wizard--parse-table)))
          (ends (latex-table-wizard--get-env-ends table)))
     (cond ((< pos (car ends))
@@ -848,14 +854,15 @@ beginning.."
 
 THING can be either \\='cell\\=', \\='column\\=' or \\='row\\='.
 
-TABLE is a list of cell plists.  If it is nil, evaluate
-`latex-table-wizard--parse-table' to get a value.
+TABLE is a list of cell plists.  If it is nil, use the value of
+`latex-table-wizard--parse-table'.
 
 If THING is \\='cell\\=', return one plist, else return a list of
 plists."
+  (declare (side-effect-free t))
   (let* ((pos (point))
          (cells-list (or table (latex-table-wizard--parse-table)))
-         (curr (latex-table-wizard--locate-point pos)))
+         (curr (latex-table-wizard--locate-point pos cells-list)))
     (if (eq thing 'cell)
         curr
       (let* ((prop (if (eq thing 'row) :row :column))
@@ -874,7 +881,8 @@ having CELL shifted in direction DIR (whose value is either
 \\='next\\=', \\='previous\\=', \\='forward\\=' or
 \\='backward\\=').  If no such cell is found in TABLE, return
 nil."
-  (let (target                          ; a cons cell of (column . row)
+  (declare (pure t) (side-effect-free t))
+  (let (target                 ; a cons cell of (column . row)
         output)
     (cond ((eq dir 'next)
            (setq target (cons (plist-get cell :column)
@@ -934,9 +942,8 @@ DIR is either \\='next\\=', \\='previous\\=')."
 
         (latex-table-wizard--remove-overlays cells)
         (unless stop
-          ;; (goto-char (plist-get curr :start))
           (goto-char (plist-get target :start))
-          (latex-table-wizard--hl-cells `(,target))
+          (latex-table-wizard--hl-cells (list target))
           (latex-table-wizard--hl-cells latex-table-wizard--selection)
           (message "Col X Row (%d,%d)"
                    (plist-get target :column)
@@ -980,6 +987,7 @@ If SEL is a list of more than one cell such that not all the
 cells have the same value for either :column or :row, it means
 that this selection is neither a column or a row, and nil is
 returned."
+  (declare (pure t))
   (cond ((= 1 (length sel)) 'cell)
         ((not sel) (user-error "Empty selection"))
         ((apply #'= (mapcar (lambda (x) (plist-get x :column)) sel)) 'column)
@@ -994,7 +1002,7 @@ TYPE is either \\='column\\=' or \\='row\\='."
     (let ((prop (if (eq type 'column) :row :column)))
       (dolist (x line1)
         (let ((other (latex-table-wizard--get-cell-pos
-                      line2 `(,prop . ,(plist-get x prop)))))
+                      line2 (cons prop (plist-get x prop)))))
           (latex-table-wizard--swap-cells x other))))))
 
 (defun latex-table-wizard--swap-adjacent-line (dir type)
@@ -1017,7 +1025,7 @@ TYPE is either \\='cell\\=', \\='column\\=' or \\='row\\='."
     (let ((new-table (latex-table-wizard--parse-table)))
       (if (eq type 'cell)
           (latex-table-wizard--hl-cells
-           `(,(latex-table-wizard--get-thing type new-table)))
+           (list (latex-table-wizard--get-thing type new-table)))
         (latex-table-wizard--hl-cells
          (latex-table-wizard--get-thing type new-table))))))
 
@@ -1101,10 +1109,10 @@ There are five possible values for MODE:
             (insert "\n")))
         (whitespace-cleanup-region latex-table-wizard--table-begin
                                    latex-table-wizard--table-end)
-        (dolist (x (flatten-list (mapcar (lambda (x) `(,(plist-get x :start)
-                                                       ,(plist-get x :end)))
-                                         (latex-table-wizard--parse-table))))
-          (goto-char x)
+        (dolist (x (latex-table-wizard--parse-table))
+          (goto-char (plist-get x :start))
+          (just-one-space)
+          (goto-char (plist-get x :end))
           (just-one-space))
         (if (eq md 'compress)
             (message "Table compressed")
@@ -1402,8 +1410,7 @@ for each cells too)."
                    (latex-table-wizard--skip-stuff end-table))
           (insert row-del "\n"))
         (let ((how-many (length current-row)))
-          (dotimes (i (1- how-many))
-            (ignore i)
+          (dotimes (_ (1- how-many))
             (insert " " col-del))
           (insert " " row-del "\n")))))
   (run-hooks 'latex-table-wizard-after-table-modified-hook))
@@ -1665,7 +1672,7 @@ It replaces the content of current cell upon calling
 Add it to the `kill-ring' and as the value of
 `latex-table-wizard--copied-cell-content'.
 
-If KILL is non-nil, also remove that content from the cell. "
+If KILL is non-nil, also remove that content from the cell."
   (let* ((cell (latex-table-wizard--get-thing 'cell))
          (cont  (buffer-substring (plist-get cell :start)
                                   (plist-get cell :end))))
@@ -2029,8 +2036,8 @@ all defined faces."
     (latex-table-wizard--parse-table)
     (let* ((tab-b latex-table-wizard--table-begin)
            (tab-e (1+ latex-table-wizard--table-end))
-           (ols `(,(make-overlay (point-min) tab-b)
-                  ,(make-overlay tab-e (point-max)))))
+           (ols (list (make-overlay (point-min) tab-b)
+                      (make-overlay tab-e (point-max)))))
       (dolist (x ols)
         (overlay-put x 'tabl-outside-ol t)
         (overlay-put x 'face 'latex-table-wizard-background)))))
