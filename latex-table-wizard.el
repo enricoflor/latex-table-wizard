@@ -5,7 +5,7 @@
 ;; Author: Enrico Flor <enrico@eflor.net>
 ;; Maintainer: Enrico Flor <enrico@eflor.net>
 ;; URL: https://github.com/enricoflor/latex-table-wizard
-;; Version: 1.6.0
+;; Version: 1.6.1
 ;; Keywords: convenience, tex
 
 ;; Package-Requires: ((emacs "27.1") (auctex "12.1") (transient "0.3.7"))
@@ -126,6 +126,11 @@
 
 ;; Suppress the compiler warning about the prefix defined at runtime.
 (declare-function latex-table-wizard-prefix "latex-table-wizard")
+
+;; Forward declarations of variables defined further down.
+(defvar latex-table-wizard--current-table)
+(defvar latex-table-wizard--selection)
+(defvar latex-table-wizard-mode)
 
 (defgroup latex-table-wizard nil
   "LaTeX table wizard configuration options."
@@ -335,7 +340,10 @@ Returns (BEGIN END NAME ARG...) as buffer positions and strings."
           (TeX-search-unescaped (concat "\\begin{" (nth 0 guess))
                                 'backward nil nil t)))
         (setq b (point) intermediate (point))
-        (when (looking-at "\\\\[^\[{\s]+")
+        ;; A macro name is either a run of letters (optionally starred)
+        ;; or a single non-letter character.  It must not run on past
+        ;; a newline or into a following macro, as in "\hline\nfoo".
+        (when (looking-at "\\\\\\(?:[[:alpha:]@]+\\*?\\|.\\)")
           (goto-char (match-end 0)))
         (push (buffer-substring-no-properties intermediate (point)) return)
         (funcall skip)
@@ -367,9 +375,10 @@ RE is a regexp matching the macro name (overrides NAMES)."
   "If point is on a \\\\begin or \\\\end macro, move out of it."
   (latex-table-wizard--set-current-values)
   (when-let* ((macro (latex-table-wizard--macro-at-point))
-              (name  (string-trim-left "\\\\" (nth 2 macro))))
-    (cond ((equal name "begin") (goto-char (nth 0 macro)))
-          ((equal name "end")   (goto-char (nth 1 macro))))))
+              (name  (string-trim-left (nth 2 macro) "\\\\")))
+    ;; Move into the table body, not away from it.
+    (cond ((equal name "begin") (goto-char (nth 1 macro)))
+          ((equal name "end")   (goto-char (nth 0 macro))))))
 
 (defun latex-table-wizard--skip-stuff (&optional bound)
   "Skip forward over whitespace, comments, and hline macros.
@@ -415,8 +424,13 @@ LIMIT is the parse stop position."
     (let ((beg (point-marker))
           end end-of-row)
       (latex-table-wizard--skip-stuff limit)
-      (unless (string-blank-p (buffer-substring-no-properties beg (point)))
-        (setq beg (point-marker)))
+      ;; Leading whitespace belongs to the cell, but not what comes
+      ;; before it on a previous line (the line break after the row
+      ;; delimiter, hline macros, comments).
+      (let ((skipped (buffer-substring-no-properties beg (point))))
+        (unless (and (string-blank-p skipped)
+                     (not (string-match-p "\n" skipped)))
+          (setq beg (point-marker))))
       (while (and (< (point) limit) (not end))
         (let ((macro (latex-table-wizard--macro-at-point
                       nil beginning latex-table-wizard-allow-detached-args)))
@@ -439,8 +453,11 @@ LIMIT is the parse stop position."
               (unless (or (eolp) (bolp))
                 (latex-table-wizard--skip-stuff limit))))
            ((looking-at "\\$\\|{")
-            (unless (ignore-errors (forward-sexp))
-              (forward-char 1)))
+            ;; `forward-sexp' returns nil even on success, so its return
+            ;; value can't tell us whether it moved.
+            (condition-case nil
+                (forward-sexp)
+              (scan-error (forward-char 1))))
            ((looking-at "\\\\(\\|\\\\\\[")
             (TeX-search-unescaped "\\\\)\\|\\\\\\]" 'forward t nil t))
            ((looking-at "[[:space:]]*\\\\\\(begin[\[{]\\)")
@@ -493,7 +510,7 @@ LIMIT is the parse stop position."
 
 A struct is valid when its mod-tick matches the current
 buffer-chars-modified-tick and point is within inner-beg..inner-end."
-  (when-let ((tbl latex-table-wizard--current-table))
+  (when-let* ((tbl latex-table-wizard--current-table))
     ;; FIXME: alignment modifies the buffer but should not invalidate.
     (when (and (= (buffer-chars-modified-tick)
                   (latex-table-wizard--table-mod-tick tbl))
@@ -527,14 +544,18 @@ Stamps every cell range with the \\='ltw-coord\\=' text property."
         (col 0) (row 0)
         (cells (make-hash-table :test #'equal))
         row-widths last-max-col ragged)
+    ;; Ensure at least one space between \begin and the first cell.
+    ;; This is a real edit, so it must not be hidden from undo and
+    ;; from `buffer-modified-p'.
+    (save-excursion
+      (goto-char env-beg)
+      (unless (looking-at-p "[[:space:]]")
+        (insert " ")))
     (with-silent-modifications
       (remove-text-properties env-beg env-end '(ltw-coord nil))
       (save-excursion
         (goto-char env-beg)
-        ;; Ensure at least one space between \begin and the first cell.
-        (if (looking-at-p "[[:space:]]")
-            (forward-char 1)
-          (insert " "))
+        (forward-char 1)
         (TeX-comment-forward 1)
         (while (looking-at-p "[[:space:]]*%")
           (TeX-comment-forward 1))
@@ -563,6 +584,13 @@ Stamps every cell range with the \\='ltw-coord\\=' text property."
                           (skip-syntax-forward " ")
                           (looking-at-p row-re)))
               (re-search-forward row-re nil t))))))
+    ;; The last row need not end with a row delimiter: count it too.
+    (when (> col 0)
+      (unless ragged
+        (if last-max-col
+            (setq ragged (/= last-max-col (1- col)))
+          (setq last-max-col (1- col))))
+      (push (cons row col) row-widths))
     (latex-table-wizard--make-table
      :mod-tick   (buffer-chars-modified-tick)
      :cells      cells
@@ -582,6 +610,11 @@ returns the result.  If the environment is empty, delegates to
   (or (latex-table-wizard--table-valid-p)
       (progn
         (setq latex-table-wizard--detached nil)
+        ;; Drop the previous table's cache and text properties, so that
+        ;; stale coords from another table can never be picked up.
+        (latex-table-wizard--invalidate)
+        ;; The hline macros are needed to find the table boundaries.
+        (latex-table-wizard--set-current-values)
         (let* ((bl-rx (if latex-table-wizard-allow-detached-args
                           latex-table-wizard--blank-detach-arg-re
                         ""))
@@ -608,6 +641,23 @@ returns the result.  If the environment is empty, delegates to
                     (TeX-search-unescaped "%" 'backward t env-beg t)
                     (re-search-backward "[^[:space:]]" nil t))
                   (unless (eolp) (forward-char 1))
+                  ;; Exclude trailing hline macros (\bottomrule etc.),
+                  ;; otherwise they are parsed as an extra cell.
+                  (let (m)
+                    (while (and (> (point) env-beg)
+                                (setq m (latex-table-wizard--macro-at-point
+                                         (1- (point)) env-beg
+                                         latex-table-wizard-allow-detached-args))
+                                (= (nth 1 m) (point))
+                                (> (nth 0 m) env-beg)
+                                (member (string-trim-left (nth 2 m) "\\\\")
+                                        latex-table-wizard--current-hline-macros))
+                      (goto-char (nth 0 m))
+                      (re-search-backward "[^[:space:]]" env-beg t)
+                      (while (TeX-in-comment)
+                        (TeX-search-unescaped "%" 'backward t env-beg t)
+                        (re-search-backward "[^[:space:]]" env-beg t))
+                      (unless (eolp) (forward-char 1))))
                   (point-marker))))
           (if (string-blank-p
                (buffer-substring-no-properties env-beg env-end))
@@ -654,8 +704,16 @@ backward because a position between two cells belongs conceptually to
 the cell on its left: if you were to insert text there, it would become
 part of that cell's content."
   (unless (latex-table-wizard--coord-at-point)
-    (when-let ((found (text-property-search-backward 'ltw-coord)))
-      (goto-char (prop-match-beginning found))))
+    (let* ((tbl   latex-table-wizard--current-table)
+           (first (and tbl (latex-table-wizard--table-inner-beg tbl)))
+           (found (and first
+                       (> (point) first)
+                       (text-property-search-backward 'ltw-coord))))
+      ;; Never snap to a position before the first cell (e.g. when
+      ;; point is on the \begin line): go to the first cell instead.
+      (cond ((and found (>= (prop-match-beginning found) first))
+             (goto-char (prop-match-beginning found)))
+            (first (goto-char first)))))
   (when (eolp) (forward-char 1)))
 
 (defun latex-table-wizard--current-coord ()
@@ -744,76 +802,75 @@ NOCYCLE: do not move if the immediate next step would leave the
 current row or column."
   (when (latex-table-wizard--in-tabular-env-p)
     (latex-table-wizard--setup)
-    (with-silent-modifications
-      (latex-table-wizard--parse)
-      (let* ((message-log-max nil)
-             (tbl    latex-table-wizard--current-table)
-             (ht     (latex-table-wizard--table-cells tbl))
-             (curr   (latex-table-wizard--current-coord))
-             (vert   (memq dir '(next previous)))
-             (fwd-p  (memq dir '(forward next)))
-             (steps  (or count 1))
-             (stop   (and nocycle
-                          (not (latex-table-wizard--shift-coord curr dir))))
-             (target
-              (cond
-               (stop curr)
-               (absolute
-                (car (if vert
-                         (latex-table-wizard--current-col-coords fwd-p)
-                       (latex-table-wizard--current-row-coords fwd-p))))
-               (same-line
-                (let* ((line (if vert
-                                 (latex-table-wizard--current-col-coords)
-                               (latex-table-wizard--current-row-coords)))
-                       (n    (length line))
-                       (now  (cl-position curr line :test #'equal)))
-                  (nth (mod (+ now (if fwd-p steps (- steps))) n) line)))
-               (t
-                ;; General case: COUNT steps with wrapping.
-                ;; Try the direct hash neighbour first (common case, O(1)).
-                ;; At a boundary, compute the wrap target from the coord
-                ;; arithmetic and the struct, then loop for remaining steps.
-                (let ((max-col
-                       (or (latex-table-wizard--table-width tbl)
-                           (apply #'max (mapcar #'car (hash-table-keys ht)))))
-                      (height (latex-table-wizard--table-height tbl))
-                      (cur curr))
-                  (dotimes (_ steps cur)
-                    (setq cur
-                          (or (latex-table-wizard--shift-coord cur dir)
-                              ;; At a boundary: find the wrap target.
-                              (pcase dir
-                                ('forward
-                                 (let ((row (mod (1+ (cdr cur)) height)))
-                                   (or (and (gethash (cons 0 row) ht)
-                                            (cons 0 row))
-                                       (car (latex-table-wizard--row-coords
-                                             row)))))
-                                ('backward
-                                 (let ((row (mod (1- (cdr cur)) height)))
-                                   (car (latex-table-wizard--row-coords
-                                         row t))))
-                                ('next
-                                 (let ((col (mod (1+ (car cur))
-                                                 (1+ max-col))))
-                                   (or (and (gethash (cons col 0) ht)
-                                            (cons col 0))
-                                       (car (latex-table-wizard--col-coords
-                                             col)))))
-                                ('previous
-                                 (let ((col (mod (1- (car cur))
-                                                 (1+ max-col))))
-                                   (car (latex-table-wizard--col-coords
-                                         col t)))))))))))))
-        (latex-table-wizard--remove-overlays)
-        (unless stop
-          (goto-char (latex-table-wizard--cell-beg target))
-          (when (eolp) (forward-char 1))
-          (latex-table-wizard--hl-coords (list target))
-          (latex-table-wizard--hl-coords latex-table-wizard--selection)
-          (message "Col x Row (%d,%d)" (car target) (cdr target))))
-      (run-hooks 'latex-table-wizard-after-movement-hook))))
+    (latex-table-wizard--parse)
+    (let* ((message-log-max nil)
+           (tbl    latex-table-wizard--current-table)
+           (ht     (latex-table-wizard--table-cells tbl))
+           (curr   (latex-table-wizard--current-coord))
+           (vert   (memq dir '(next previous)))
+           (fwd-p  (memq dir '(forward next)))
+           (steps  (or count 1))
+           (stop   (and nocycle
+                        (not (latex-table-wizard--shift-coord curr dir))))
+           (target
+            (cond
+             (stop curr)
+             (absolute
+              (car (if vert
+                       (latex-table-wizard--current-col-coords fwd-p)
+                     (latex-table-wizard--current-row-coords fwd-p))))
+             (same-line
+              (let* ((line (if vert
+                               (latex-table-wizard--current-col-coords)
+                             (latex-table-wizard--current-row-coords)))
+                     (n    (length line))
+                     (now  (cl-position curr line :test #'equal)))
+                (nth (mod (+ now (if fwd-p steps (- steps))) n) line)))
+             (t
+              ;; General case: COUNT steps with wrapping.
+              ;; Try the direct hash neighbour first (common case, O(1)).
+              ;; At a boundary, compute the wrap target from the coord
+              ;; arithmetic and the struct, then loop for remaining steps.
+              (let ((max-col
+                     (or (latex-table-wizard--table-width tbl)
+                         (apply #'max (mapcar #'car (hash-table-keys ht)))))
+                    (height (latex-table-wizard--table-height tbl))
+                    (cur curr))
+                (dotimes (_ steps cur)
+                  (setq cur
+                        (or (latex-table-wizard--shift-coord cur dir)
+                            ;; At a boundary: find the wrap target.
+                            (pcase dir
+                              ('forward
+                               (let ((row (mod (1+ (cdr cur)) height)))
+                                 (or (and (gethash (cons 0 row) ht)
+                                          (cons 0 row))
+                                     (car (latex-table-wizard--row-coords
+                                           row)))))
+                              ('backward
+                               (let ((row (mod (1- (cdr cur)) height)))
+                                 (car (latex-table-wizard--row-coords
+                                       row t))))
+                              ('next
+                               (let ((col (mod (1+ (car cur))
+                                               (1+ max-col))))
+                                 (or (and (gethash (cons col 0) ht)
+                                          (cons col 0))
+                                     (car (latex-table-wizard--col-coords
+                                           col)))))
+                              ('previous
+                               (let ((col (mod (1- (car cur))
+                                               (1+ max-col))))
+                                 (car (latex-table-wizard--col-coords
+                                       col t)))))))))))))
+      (latex-table-wizard--remove-overlays)
+      (unless stop
+        (goto-char (latex-table-wizard--cell-beg target))
+        (when (eolp) (forward-char 1))
+        (latex-table-wizard--hl-coords (list target))
+        (latex-table-wizard--hl-coords latex-table-wizard--selection)
+        (message "Col x Row (%d,%d)" (car target) (cdr target))))
+    (run-hooks 'latex-table-wizard-after-movement-hook)))
 
 ;;; Overlays
 
@@ -830,7 +887,7 @@ current row or column."
   "Highlight each cell in the list of COORDS."
   (unless latex-table-wizard-no-highlight
     (dolist (coord coords)
-      (when-let ((bounds (latex-table-wizard--cell-bounds coord)))
+      (when-let* ((bounds (latex-table-wizard--cell-bounds coord)))
         (let ((ov (make-overlay (car bounds) (cdr bounds))))
           (overlay-put ov 'ltw-hl t)
           (overlay-put ov 'face 'latex-table-wizard-highlight))))))
@@ -1085,7 +1142,7 @@ With SELECT non-nil, always add."
            (latex-table-wizard-select-row t)))
     (setq latex-table-wizard--selection
           (cl-remove-duplicates latex-table-wizard--selection :test #'equal))
-    (when-let ((neighbour (latex-table-wizard--shift-coord
+    (when-let* ((neighbour (latex-table-wizard--shift-coord
                            (latex-table-wizard--current-coord) dir)))
       (goto-char (latex-table-wizard--cell-beg neighbour))
       (latex-table-wizard-swap)
@@ -1183,6 +1240,7 @@ With SELECT non-nil, always add."
   (interactive)
   (when (latex-table-wizard--in-tabular-env-p)
     (latex-table-wizard--setup)
+    (latex-table-wizard--parse)
     (save-excursion
       (let ((col-del (car latex-table-wizard--current-col-delims)))
         (dolist (coord (latex-table-wizard--current-col-coords))
@@ -1190,33 +1248,51 @@ With SELECT non-nil, always add."
           (insert " " col-del " "))))
     (run-hooks 'latex-table-wizard-after-table-modified-hook)))
 
+(defun latex-table-wizard--cell-and-delimiter-bounds (coord)
+  "Return (BEG . END) markers spanning the cell at COORD and one delimiter.
+
+The delimiter is the one on the left of the cell, or, for a cell in
+the first column, the one on its right.  The span never leaves the
+cell's row: if the cell has no neighbour in its row, only the cell
+itself is spanned."
+  (let* ((prev   (cons (1- (car coord)) (cdr coord)))
+         (col-re (regexp-opt latex-table-wizard--current-col-delims))
+         (beg    (latex-table-wizard--cell-beg coord))
+         (end    (latex-table-wizard--cell-end coord)))
+    (if (and (> (car coord) 0) (latex-table-wizard--cell-bounds prev))
+        (cons (copy-marker (latex-table-wizard--cell-end prev))
+              (copy-marker end))
+      (save-excursion
+        (goto-char end)
+        (cons (copy-marker beg)
+              (copy-marker (if (looking-at col-re) (match-end 0) end)))))))
+
 ;;;###autoload
 (defun latex-table-wizard-delete-column ()
-  "Delete the current column, including its adjacent delimiter."
+  "Delete the current column, including its adjacent delimiter.
+
+The deleted content is added to the kill ring, one cell per line."
   (interactive)
   (when (latex-table-wizard--in-tabular-env-p)
     (latex-table-wizard--setup)
+    (latex-table-wizard--parse)
     (save-excursion
       (let* ((col-coords (latex-table-wizard--current-col-coords))
              (ind        (caar col-coords))
-             (col-re     (regexp-opt latex-table-wizard--current-col-delims))
-             (first-col  (= ind 0))
-             kills poss)
+             kills regions)
+        ;; Compute every region before deleting anything.
         (dolist (coord col-coords)
-          (let ((anchor (if first-col
-                            (latex-table-wizard--cell-end coord)
-                          (latex-table-wizard--cell-beg coord)))
-                (search-count (if first-col 1 -1))) ; sets direction of search
-            (goto-char anchor)
-            (re-search-forward col-re nil t search-count)
-            (delete-region anchor (point)))
-          (push (buffer-substring (latex-table-wizard--cell-beg coord)
-                                  (latex-table-wizard--cell-end coord))
+          (push (string-trim
+                 (buffer-substring (latex-table-wizard--cell-beg coord)
+                                   (latex-table-wizard--cell-end coord)))
                 kills)
-          (push (cons (latex-table-wizard--cell-beg coord)
-                      (latex-table-wizard--cell-end coord))
-                poss))
-        (dolist (p poss) (delete-region (car p) (cdr p)))
+          (push (latex-table-wizard--cell-and-delimiter-bounds coord)
+                regions))
+        (dolist (r regions)
+          (delete-region (car r) (cdr r))
+          (set-marker (car r) nil)
+          (set-marker (cdr r) nil))
+        (kill-new (string-join (nreverse kills) "\n"))
         (run-hooks 'latex-table-wizard-after-table-modified-hook)
         (message "Column %d deleted" ind)))))
 
@@ -1228,8 +1304,10 @@ With SELECT non-nil, always add."
   (interactive)
   (when (latex-table-wizard--in-tabular-env-p)
     (latex-table-wizard--setup)
+    (latex-table-wizard--parse)
     (save-excursion
       (let* ((col-coords (latex-table-wizard--current-col-coords))
+             (ind        (caar col-coords))
              kills poss)
         (dolist (coord col-coords)
           (push (buffer-substring (latex-table-wizard--cell-beg coord)
@@ -1238,11 +1316,13 @@ With SELECT non-nil, always add."
           (push (cons (latex-table-wizard--cell-beg coord)
                       (latex-table-wizard--cell-end coord))
                 poss))
-        (dolist (p poss) (delete-region (car p) (cdr p)))
+        (dolist (p poss)
+          (delete-region (car p) (cdr p))
+          (goto-char (car p))
+          (insert " "))
         (kill-new (string-join (nreverse kills) "\n"))
         (run-hooks 'latex-table-wizard-after-table-modified-hook)
-        (message "Content of column %d added to kill ring"
-                 (car (latex-table-wizard--current-coord)))))))
+        (message "Content of column %d added to kill ring" ind)))))
 
 ;;;###autoload
 (defun latex-table-wizard-insert-row ()
@@ -1291,7 +1371,9 @@ With SELECT non-nil, always add."
                       (latex-table-wizard--cell-end coord))
                 poss))
         (dolist (p poss)
-          (let ((repl (make-string (- (cdr p) (car p)) ?\s)))
+          (let ((repl (replace-regexp-in-string
+                       "[^\n]" " "
+                       (buffer-substring-no-properties (car p) (cdr p)))))
             (delete-region (car p) (cdr p))
             (goto-char (car p))
             (insert repl)))
@@ -1316,6 +1398,16 @@ With SELECT non-nil, always add."
                                       latex-table-wizard--current-row-delims))
                          (match-end 0)
                        end))))
+        ;; If the row occupies whole lines, delete those lines entirely
+        ;; rather than leaving a blank line behind.
+        (let ((bol (save-excursion (goto-char beg)
+                                   (skip-chars-backward " \t")
+                                   (and (bolp) (point))))
+              (eol (save-excursion (goto-char end+)
+                                   (skip-chars-forward " \t")
+                                   (and (eolp) (not (eobp)) (1+ (point))))))
+          (when (and bol eol)
+            (setq beg bol end+ eol)))
         (kill-region beg end+)
         (run-hooks 'latex-table-wizard-after-table-modified-hook)))))
 
@@ -1359,23 +1451,11 @@ table structure by also commenting out an adjacent delimiter."
     (latex-table-wizard--parse)
     (let* ((coords  (or latex-table-wizard--selection
                         (list (latex-table-wizard--current-coord))))
-           (col-re  (regexp-opt latex-table-wizard--current-col-delims)))
-      (dolist (coord coords)
-        (let* ((ind (car coord))
-               (beg (latex-table-wizard--cell-beg coord))
-               (end (latex-table-wizard--cell-end coord))
-               (comment-beg
-                (if (= ind 0) beg
-                  (save-excursion (goto-char beg)
-                                  (re-search-backward col-re nil t)
-                                  (point))))
-               (comment-end
-                (if (= ind 0)
-                    (save-excursion (goto-char end)
-                                    (re-search-forward col-re nil t)
-                                    (point))
-                  end)))
-          (latex-table-wizard--comment-region comment-beg comment-end)))
+           ;; Compute every region before modifying the buffer.
+           (regions (mapcar #'latex-table-wizard--cell-and-delimiter-bounds
+                            coords)))
+      (dolist (r regions)
+        (latex-table-wizard--comment-region (car r) (cdr r)))
       (run-hooks 'latex-table-wizard-after-table-modified-hook)
       (message "%d cell(s) commented out" (length coords)))))
 
@@ -1500,6 +1580,18 @@ Pass MODE directly to skip to a specific mode."
              (right (make-string (- diff (/ diff 2)) ?\s)))
         (concat left s right)))))
 
+(defun latex-table-wizard--replace-cell-content (beg end str len)
+  "Replace BEG..END with STR, padded to width LEN if it is shorter.
+
+STR is always surrounded by at least one space, so that it never
+touches the delimiters.  Runs
+\\='latex-table-wizard-after-table-modified-hook\\='."
+  (let ((width (max len (+ 2 (length (string-trim str))))))
+    (delete-region beg end)
+    (goto-char beg)
+    (insert (latex-table-wizard--fit-string str width))
+    (run-hooks 'latex-table-wizard-after-table-modified-hook)))
+
 ;;;###autoload
 (defun latex-table-wizard-edit-cell ()
   "Interactively edit the content of the current cell."
@@ -1514,9 +1606,7 @@ Pass MODE directly to skip to a specific mode."
            (new     (read-string (format "Edit cell (%d,%d): "
                                          (car coord) (cdr coord))
                                  (string-trim current) nil nil t)))
-      (delete-region beg end)
-      (goto-char beg)
-      (insert " " (latex-table-wizard--fit-string new len) " "))))
+      (latex-table-wizard--replace-cell-content beg end new len))))
 
 (defvar-local latex-table-wizard--copied-cell-content nil
   "Last cell content stored by
@@ -1532,7 +1622,9 @@ Pass MODE directly to skip to a specific mode."
            (cont  (buffer-substring beg end)))
       (when kill
         (delete-region beg end)
-        (insert " "))
+        (goto-char beg)
+        (insert " ")
+        (run-hooks 'latex-table-wizard-after-table-modified-hook))
       (kill-new (string-trim cont))
       (setq latex-table-wizard--copied-cell-content cont)
       (message "Content of cell (%d,%d) %s"
@@ -1562,10 +1654,8 @@ Pass MODE directly to skip to a specific mode."
            (beg   (latex-table-wizard--cell-beg coord))
            (end   (latex-table-wizard--cell-end coord))
            (len   (- end beg)))
-      (delete-region beg end)
-      (goto-char beg)
-      (insert (latex-table-wizard--fit-string
-               latex-table-wizard--copied-cell-content len)))))
+      (latex-table-wizard--replace-cell-content
+       beg end latex-table-wizard--copied-cell-content len))))
 
 
 
@@ -1636,7 +1726,7 @@ Each element is (COMMAND KEY DESCRIPTION).")
 Changing this variable causes \\='latex-table-wizard-prefix\\=' to be
 redefined.  See \\='latex-table-wizard-default-transient-keys\\=' for
 the full list of commands that can be bound."
-  :type '(alist :key-type
+  :type `(alist :key-type
                 (symbol :tag "Command:"
                         :options
                         ,(mapcar #'car
@@ -1709,20 +1799,24 @@ the full list of commands that can be bound."
 
 ;;; Environment detection
 
-(defvar latex-table-wizard--environments
-  (nconc (mapcar #'car latex-table-wizard-new-environments-alist)
-         (mapcar #'car
-                 (cl-remove-if-not
-                  (lambda (c) (eq (nth 1 c) 'LaTeX-indent-tabular))
-                  LaTeX-indent-environment-list)))
-  "LaTeX environments that \\='latex-table-wizard\\=' can operate on.")
+(defun latex-table-wizard--environments ()
+  "Return the LaTeX environments \\='latex-table-wizard\\=' can operate on.
+
+Computed on each call, so that changes to
+\\='latex-table-wizard-new-environments-alist\\=' made after loading
+the package are taken into account."
+  (append (mapcar #'car latex-table-wizard-new-environments-alist)
+          (mapcar #'car
+                  (cl-remove-if-not
+                   (lambda (c) (eq (nth 1 c) 'LaTeX-indent-tabular))
+                   LaTeX-indent-environment-list))))
 
 (defun latex-table-wizard--in-tabular-env-p (&optional pos)
   "Return non-nil if POS (default: point) is inside a supported environment."
   (member (save-excursion
             (goto-char (or pos (point)))
             (LaTeX-current-environment))
-          latex-table-wizard--environments))
+          (latex-table-wizard--environments)))
 
 ;;; Setup and teardown
 
@@ -1762,6 +1856,13 @@ which case removes only when exiting a chain of ltw commands."
       (remove-overlays (point-min) (point-max) 'ltw-hl    t)
       (remove-overlays (point-min) (point-max) 'ltw-focus t))))
 
+(defun latex-table-wizard--cleanup-if-not-in-chain ()
+  "Remove ltw overlays when exiting a chain of ltw commands.
+
+A named function (rather than a closure) so that it can be removed
+from \\='pre-command-hook\\='."
+  (latex-table-wizard--cleanup t))
+
 ;;; Minor mode
 
 (define-minor-mode latex-table-wizard-mode
@@ -1778,12 +1879,13 @@ which case removes only when exiting a chain of ltw commands."
         (add-hook 'before-save-hook    #'latex-table-wizard--cleanup nil t)
         (add-hook 'transient-exit-hook #'latex-table-wizard--cleanup nil t)
         (add-hook 'pre-command-hook
-                  (apply-partially #'latex-table-wizard--cleanup t) nil t))
+                  #'latex-table-wizard--cleanup-if-not-in-chain nil t))
     (remove-hook 'latex-table-wizard-after-table-modified-hook
                  #'latex-table-wizard--invalidate t)
     (remove-hook 'before-save-hook    #'latex-table-wizard--cleanup t)
     (remove-hook 'transient-exit-hook #'latex-table-wizard--cleanup t)
-    (remove-hook 'pre-command-hook    #'latex-table-wizard--cleanup t)
+    (remove-hook 'pre-command-hook
+                 #'latex-table-wizard--cleanup-if-not-in-chain t)
     (latex-table-wizard--invalidate)))
 
 ;;; Entry points

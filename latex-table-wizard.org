@@ -4,8 +4,12 @@
 #+EMAIL: enrico@eflor.net
 
 #+OPTIONS: ':t toc:t author:t email:t
-#+MACRO: version 1.6.0
-#+MACRO: updated last updated 3 May 2026
+#+TEXINFO_FILENAME: latex-table-wizard.info
+#+TEXINFO_DIR_CATEGORY: Emacs misc features
+#+TEXINFO_DIR_NAME: LaTeX Table Wizard
+#+TEXINFO_DIR_DESC: Magic editing of LaTeX tables
+#+MACRO: version 1.6.1
+#+MACRO: updated last updated 1 October 2026
 
     [[https://elpa.gnu.org/packages/latex-table-wizard.html][https://elpa.gnu.org/packages/latex-table-wizard.svg]]
     [[https://melpa.org/#/latex-table-wizard][file:https://melpa.org/packages/latex-table-wizard-badge.svg]]
@@ -172,7 +176,8 @@ is.
 
 ~latex-table-wizard-delete-column~ and ~latex-table-wizard-delete-row~
 modify the structure of the table (they actually remove the
-column/table, not just the content of the cells in them).
+column/table, not just the content of the cells in them).  Both add
+the deleted content to the kill ring.
 
 ** Swap adjacent fields
 
@@ -391,7 +396,7 @@ A way to avoid this problem may be defining a LaTeX macro that does
 nothing, and use it in the cell you intend to be empty so that the
 parser sees some text.
 
-#+begin_src latex
+#+begin_src LaTeX
 \newcommand{\blk}{}
 #+end_src
 
@@ -556,7 +561,7 @@ from each other in LaTeX.  Suppose there is a macro ~\macro~ that takes
 one optional and one obligatory argument.  Now, LaTeX can deal with
 all of the following forms:
 
-#+begin_src latex
+#+begin_src LaTeX
 \macro[first]{second}
 
 \macro  [first]   {second}
@@ -571,7 +576,7 @@ table content starts.  Suppose you defined a tabular like environment
 ~myenv~ whose ~\begin~ macro accepts an optional argument.  Is =[abc]= below
 the optional argument of the environment or content of the first cell?
 
-#+begin_src latex
+#+begin_src LaTeX
 \begin{myenv}
   [abc] def & ...
 #+end_src

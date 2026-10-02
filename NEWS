@@ -1,5 +1,74 @@
 -*- mode: org -*-
 
+* 1.6.1 <2026-10-01 Thu>
+
+Bug fix release.  No user-facing command, keybinding, option, hook or
+face was added or removed.
+
+** Parsing
++ A brace group or inline math directly followed by a column
+  delimiter (e.g. ~{a}& b~ or ~$x$& b~) was merged with the next cell.
++ A last row not terminated by a row delimiter was not counted, so
+  moving across the end of the table skipped it or landed in the
+  wrong row.  It also wasn't considered when detecting ragged tables.
++ Horizontal-line macros between the last row and ~\end~ (e.g.
+  ~\bottomrule~) were parsed as an extra cell, which commands could
+  then edit (~insert-column~ produced ~\bottomrule &~).
++ A horizontal-line macro followed by a row starting at the beginning
+  of a line was parsed as part of that row's first cell: macro names
+  could extend across line breaks.
++ The first cell of every row included the line break before it.  As a
+  consequence, swapping rows, killing row or column content and
+  deleting columns could join rows onto a single line, and aligning
+  left blank lines between rows.
++ Parsing could insert a space after ~\begin{...}~ (and fill an empty
+  environment) without marking the buffer as modified and without
+  recording the change for undo.
++ Starting the wizard with point on the ~\begin~ line signaled an error.
++ Cells of a previously visited table could be picked up when looking
+  for the cell at point.
+
+** Commands
++ ~latex-table-wizard-delete-column~ deleted text outside the current
+  row (and even outside the table) when a row had a single cell, e.g.
+  in single-column or ragged tables.  The deleted content is now also
+  added to the kill ring, as ~latex-table-wizard-delete-row~ does.
++ ~latex-table-wizard-comment-out~ always signaled an error (a local
+  variable shadowed the dynamic variable ~comment-end~), and could
+  comment out text outside the current row.
++ ~latex-table-wizard-insert-column~, ~latex-table-wizard-delete-column~
+  and ~latex-table-wizard-kill-column-content~ failed when called after
+  another command that modified the table.
++ ~latex-table-wizard-kill-column-content~ always signaled an error
+  after killing the content.
++ ~latex-table-wizard-delete-row~ left a blank line behind.
++ ~latex-table-wizard-edit-cell~ added two spaces to the cell every
+  time it was used.  New content longer than the old one is now still
+  separated from the delimiters by a space (same for
+  ~latex-table-wizard-yank-cell-content~).
++ ~latex-table-wizard-edit-cell~, ~latex-table-wizard-yank-cell-content~
+  and ~latex-table-wizard-kill-cell-content~ now run
+  ~latex-table-wizard-after-table-modified-hook~ like the other editing
+  commands.
+
+** Customization and minor mode
++ Environments added to ~latex-table-wizard-new-environments-alist~
+  after the package was loaded were not recognized.
++ The customization interface for ~latex-table-wizard-transient-keys~
+  was broken (its ~:type~ was not evaluated).
++ Disabling ~latex-table-wizard-mode~ did not remove its
+  ~pre-command-hook~ function, and every activation added a new one.
+
+** Internals
+*** New internal functions
+  ~+ latex-table-wizard--cell-and-delimiter-bounds COORD~
+  ~+ latex-table-wizard--replace-cell-content BEG END STR LEN~
+  ~+ latex-table-wizard--cleanup-if-not-in-chain~
+  ~+ latex-table-wizard--environments~ (replaces the variable of the same name)
+
+*** Removed internal variables
++ ~latex-table-wizard--environments~ (now a function, see above)
+
 * 1.6.0 <2026-05-03 Sun>
 
 ** Complete overhaul of the interals

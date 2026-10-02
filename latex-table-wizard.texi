@@ -1,20 +1,20 @@
 \input texinfo    @c -*- texinfo -*-
 @c %**start of header
-@setfilename readme.info
+@setfilename latex-table-wizard.info
 @settitle @LaTeX{} table wizard - Magic editing of @LaTeX{} tables
 @documentencoding UTF-8
 @documentlanguage en
 @c %**end of header
 
-@dircategory Misc
+@dircategory Emacs misc features
 @direntry
-* (readme).             @LaTeX{} table wizard - Magic editing of @LaTeX{} tables.
+* LaTeX Table Wizard: (latex-table-wizard). Magic editing of LaTeX tables.
 @end direntry
 
 @finalout
 @titlepage
 @title @LaTeX{} table wizard - Magic editing of @LaTeX{} tables
-@subtitle for version 1.6.0
+@subtitle for version 1.6.1
 @author Enrico Flor (@email{enrico@@eflor.net})
 @end titlepage
 
@@ -306,7 +306,8 @@ is.
 
 @code{latex-table-wizard-delete-column} and @code{latex-table-wizard-delete-row}
 modify the structure of the table (they actually remove the
-column/table@comma{} not just the content of the cells in them).
+column/table@comma{} not just the content of the cells in them).  Both add
+the deleted content to the kill ring.
 
 @node Swap adjacent fields
 @section Swap adjacent fields
@@ -598,6 +599,10 @@ A way to avoid this problem may be defining a @LaTeX{} macro that does
 nothing@comma{} and use it in the cell you intend to be empty so that the
 parser sees some text.
 
+@example
+\newcommand@{\blk@}@{@}
+@end example
+
 So instead of @code{\\ \\} we will have @code{\\ \blk@{@} \\}.
 
 @node Customization
@@ -778,11 +783,25 @@ from each other in @LaTeX{}.  Suppose there is a macro @code{\macro} that takes
 one optional and one obligatory argument.  Now@comma{} @LaTeX{} can deal with
 all of the following forms:
 
+@example
+\macro[first]@{second@}
+
+\macro  [first]   @{second@}
+
+\macro  [first] % comment
+     @{second@}
+@end example
+
 This fact matters for this package for several reasons but the most
 important is that@comma{} in parsing the table@comma{} we need to know where the
 table content starts.  Suppose you defined a tabular like environment
 @code{myenv} whose @code{\begin} macro accepts an optional argument.  Is @samp{[abc]} below
 the optional argument of the environment or content of the first cell?
+
+@example
+\begin@{myenv@}
+  [abc] def & ...
+@end example
 
 By default@comma{} @code{latex-table-wizard} will consider @samp{[abc]} part of the first
 cell in the example above@comma{} because it does not recognize the
