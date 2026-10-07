@@ -14,7 +14,7 @@
 @finalout
 @titlepage
 @title @LaTeX{} table wizard - Magic editing of @LaTeX{} tables
-@subtitle for version 1.6.1
+@subtitle for version 1.6.2
 @author Enrico Flor (@email{enrico@@eflor.net})
 @end titlepage
 
@@ -56,7 +56,7 @@ Available commands
 * Start editing::
 * Relative motion commands::
 * Absolute motion commands::
-* Mark@comma{} kill and insert commands: Mark kill and insert commands. 
+* Mark@comma{} kill and insert commands: Mark kill and insert commands.
 * Swap adjacent fields::
 * Swap arbitrary fields::
 * Comment out cells::
@@ -141,7 +141,7 @@ Whenever we say ``current'' we mean ``at point''.
 * Start editing::
 * Relative motion commands::
 * Absolute motion commands::
-* Mark@comma{} kill and insert commands: Mark kill and insert commands. 
+* Mark@comma{} kill and insert commands: Mark kill and insert commands.
 * Swap adjacent fields::
 * Swap arbitrary fields::
 * Comment out cells::
@@ -178,8 +178,8 @@ to 1.
 @tab @code{n}
 @item @code{latex-table-wizard-up}
 @tab @code{p}
-@item 
-@tab 
+@item
+@tab
 @end multitable
 
 With just one of these@comma{} you can get anywhere you want in a table.

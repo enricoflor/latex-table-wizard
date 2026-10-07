@@ -8,7 +8,7 @@
 #+TEXINFO_DIR_CATEGORY: Emacs misc features
 #+TEXINFO_DIR_NAME: LaTeX Table Wizard
 #+TEXINFO_DIR_DESC: Magic editing of LaTeX tables
-#+MACRO: version 1.6.1
+#+MACRO: version 1.6.2
 #+MACRO: updated last updated 1 October 2026
 
     [[https://elpa.gnu.org/packages/latex-table-wizard.html][https://elpa.gnu.org/packages/latex-table-wizard.svg]]
